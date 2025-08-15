@@ -1,9 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WeddingData } from "@/app/types/wedding";
+import {
+  ForestSlider,
+  type ForestSliderHandle,
+} from "@/app/components/ForestSlider"; // đường dẫn theo project của bạn
 
 export default function WeddingGallery({ data }: { data: WeddingData }) {
   // Album đang chọn (mặc định: album đầu tiên)
@@ -25,23 +28,22 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
       return album.imageUrls.map((url, idx) => ({
         id: idx + 1,
         url,
-        // Tự sinh caption nếu không có từ API
         caption: `${album.title} – khoảnh khắc ${idx + 1}`,
       }));
     }
-    // fallback: dùng gallery mặc định trong data (không cần nếu luôn chọn album)
     return data.gallery;
   }, [activeAlbumKey, albumMap, data.gallery]);
 
-  // index ảnh hiện tại trong danh sách đang hiển thị
+  // Chỉ số slide hiện tại (đồng bộ với ForestSlider)
   const [index, setIndex] = useState(0);
   useEffect(() => setIndex(0), [activeAlbumKey]); // đổi album -> về ảnh đầu
 
-  const current = activeList[index];
+  const sliderRef = useRef<ForestSliderHandle | null>(null);
 
-  const prev = () =>
-    setIndex((i) => (i - 1 + activeList.length) % activeList.length);
-  const next = () => setIndex((i) => (i + 1) % activeList.length);
+  // Điều khiển slider
+  const prev = () => sliderRef.current?.prev();
+  const next = () => sliderRef.current?.next();
+  const jumpTo = (i: number) => sliderRef.current?.jumpTo(i);
 
   // phím mũi tên
   const onKey = useCallback((e: KeyboardEvent) => {
@@ -57,10 +59,23 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
   const activeAlbumTitle =
     activeAlbumKey && albumMap.get(activeAlbumKey)?.title;
 
+  // Slides cho ForestSlider
+  const slides = useMemo(
+    () =>
+      activeList.map((item) => ({
+        src: item.url,
+        heading: activeAlbumTitle ?? "Bộ sưu tập",
+        subheading: item.caption,
+        alt: item.caption,
+      })),
+    [activeList, activeAlbumTitle]
+  );
+
   const scrollToCards = useCallback(() => {
     const el = document.getElementById("album-cards");
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
   return (
     <section className="mx-auto max-w-7xl py-12">
       <h2
@@ -79,23 +94,24 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
 
       {/* Lưới 2 cột: trái = gallery, phải = albums + thumbnails */}
       <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-[1fr_320px]">
-        {/* CỘT TRÁI: Ảnh lớn + caption + mô tả */}
+        {/* CỘT TRÁI: ForestSlider + caption + mô tả */}
         <div className="rounded-md border border-lime-400 p-6">
           <div className="flex flex-col gap-4">
-            {/* Ảnh lớn */}
+            {/* Slider toàn khung cao (thay thế <Image> lớn) */}
             <div className="relative mx-auto w-full max-w-5xl overflow-hidden rounded-md bg-gray-100 h-[70vh] md:h-[70vh] lg:h-[90vh] min-h-[380px]">
-              <Image
-                key={current.url}
-                src={current.url}
-                alt={current.caption}
-                fill
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 900px, 1100px"
-                className="object-cover object-top"
-                priority
-              />
+              <div className="absolute inset-0">
+                <ForestSlider
+                  ref={sliderRef}
+                  slides={slides}
+                  autoplay={true}
+                  intervalMs={5000}
+                  intensity={0.6}
+                  onChange={(i) => setIndex(i)}
+                />
+              </div>
             </div>
 
-            {/* Caption */}
+            {/* Caption + nút prev/next (điều khiển ForestSlider) */}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-white/90 px-6 py-7 md:py-8 min-h-24 shadow">
               <div className="flex items-center gap-3">
                 <span className="grid h-8 w-8 place-items-center rounded-sm bg-green-500 text-xs font-bold text-white">
@@ -103,11 +119,11 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
                 </span>
                 <p className="text-base text-gray-700">
                   {activeAlbumTitle ? `${activeAlbumTitle}: ` : "Câu chuyện "}
-                  {current.caption}
+                  {activeList[index]?.caption}
                 </p>
               </div>
 
-              <div className="flex gap-2">
+              {/* <div className="flex gap-2">
                 <button
                   onClick={prev}
                   aria-label="Ảnh trước"
@@ -138,7 +154,7 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
                     <path d="M9 6l6 6-6 6" />
                   </svg>
                 </button>
-              </div>
+              </div> */}
             </div>
 
             {/* Mô tả dưới ảnh */}
@@ -208,7 +224,6 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
           <hr className="border-gray-200" />
 
           {/* Thumbnails của album đang chọn */}
-          {/* Thumbnails của album đang chọn */}
           <ul className="hidden md:grid grid-cols-2 gap-5">
             {activeList.map((img, i) => (
               <li
@@ -216,7 +231,7 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
                 className={`relative cursor-pointer overflow-hidden rounded border ${
                   i === index ? "ring-2 ring-green-500" : "hover:opacity-90"
                 }`}
-                onClick={() => setIndex(i)}
+                onClick={() => jumpTo(i)}
                 aria-label={`Chọn ảnh ${i + 1}`}
               >
                 <div
@@ -234,7 +249,7 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
                     alt={`Thumbnail ${i + 1}`}
                     fill
                     sizes="180px"
-                    className="object-cover"
+                    className="object-cover object-top transition-transform duration-200 hover:scale-105"
                   />
                 </div>
               </li>
