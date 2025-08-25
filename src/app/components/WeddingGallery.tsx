@@ -98,7 +98,7 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
         <div className="rounded-md border border-lime-400 p-6">
           <div className="flex flex-col gap-4">
             {/* Slider toàn khung cao (thay thế <Image> lớn) */}
-            <div className="relative mx-auto w-full max-w-5xl overflow-hidden rounded-md bg-gray-100 h-[70vh] md:h-[70vh] lg:h-[90vh] min-h-[380px]">
+            <div className="relative mx-auto w-full max-w-2xl overflow-hidden rounded-md bg-gray-100 h-[70vh] md:h-[70vh] lg:h-[70vh] min-h-[300px]">
               <div className="absolute inset-0">
                 <ForestSlider
                   ref={sliderRef}
@@ -112,7 +112,7 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
             </div>
 
             {/* Caption + nút prev/next (điều khiển ForestSlider) */}
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-white/90 px-6 py-7 md:py-8 min-h-24 shadow">
+            {/* <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-white/90 px-6 py-7 md:py-8 min-h-24 shadow">
               <div className="flex items-center gap-3">
                 <span className="grid h-8 w-8 place-items-center rounded-sm bg-green-500 text-xs font-bold text-white">
                   {index + 1}
@@ -123,7 +123,7 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
                 </p>
               </div>
 
-              {/* <div className="flex gap-2">
+               <div className="flex gap-2">
                 <button
                   onClick={prev}
                   aria-label="Ảnh trước"
@@ -154,14 +154,14 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
                     <path d="M9 6l6 6-6 6" />
                   </svg>
                 </button>
-              </div> */}
-            </div>
+              </div> 
+            </div> */}
 
             {/* Mô tả dưới ảnh */}
-            <div className="rounded bg-gray-50 p-5 text-sm leading-relaxed text-gray-600">
+            {/* <div className="rounded bg-gray-50 p-5 text-sm leading-relaxed text-gray-600">
               {activeAlbum?.description ??
                 "Bộ ảnh cưới được kể lại như một cuốn nhật ký nhỏ. Chạm vào từng ảnh để xem câu chuyện tương ứng."}
-            </div>
+            </div> */}
             <div className="flex justify-end">
               <button
                 onClick={scrollToCards}
@@ -222,9 +222,8 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
           </div>
 
           <hr className="border-gray-200" />
-
           {/* Thumbnails của album đang chọn */}
-          <ul className="hidden md:grid grid-cols-2 gap-5">
+          {/* <ul className="hidden md:grid grid-cols-2 gap-5">
             {activeList.map((img, i) => (
               <li
                 key={`${activeAlbumKey ?? "default"}-${i}`}
@@ -254,7 +253,7 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
                 </div>
               </li>
             ))}
-          </ul>
+          </ul> */}
         </aside>
       </div>
     </section>

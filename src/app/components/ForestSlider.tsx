@@ -17,6 +17,7 @@ export type ForestSlide = {
   heading?: string;
   subheading?: string;
   alt?: string;
+  blurDataURL?: string;
 };
 
 export type ForestSliderHandle = {
@@ -28,13 +29,9 @@ export type ForestSliderHandle = {
 
 type Props = {
   slides: ForestSlide[];
-  /** thời gian auto next */
   intervalMs?: number;
-  /** 0..1: cường độ Ken Burns (scale & blur) */
-  intensity?: number;
-  /** tự chạy */
+  intensity?: number; // 0..1
   autoplay?: boolean;
-  /** báo ra index khi đổi slide */
   onChange?: (index: number) => void;
 };
 
@@ -53,7 +50,7 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
     const pendingRef = useRef<number | null>(null);
     const startX = useRef<number | null>(null);
 
-    // Easing & transitions
+    // easing
     const easeCubic = useMemo(
       () => [0.16, 1, 0.3, 1] as [number, number, number, number],
       []
@@ -67,7 +64,7 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
       [easeCubic]
     );
 
-    // ===== Core navigation (định nghĩa TRƯỚC khi dùng ở nơi khác) =====
+    // navigation
     const go = useCallback(
       (delta: 1 | -1) => {
         if (isAnimating) return;
@@ -77,13 +74,12 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
       },
       [count, isAnimating]
     );
-
     const jumpTo = useCallback(
       (i: number) => {
         if (i < 0 || i >= count) return;
         if (i === index) return;
         if (isAnimating) {
-          pendingRef.current = i; // xếp hàng nếu đang animate
+          pendingRef.current = i;
           return;
         }
         setDir(i > index ? 1 : -1);
@@ -92,29 +88,40 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
       },
       [count, index, isAnimating]
     );
-
     const next = useCallback(() => go(1), [go]);
     const prev = useCallback(() => go(-1), [go]);
-    // ==================================================================
 
-    // Imperative API cho Hero (sau khi đã có go/jumpTo/next/prev)
     useImperativeHandle(
       ref,
-      () => ({
-        jumpTo,
-        next,
-        prev,
-        getIndex: () => index,
-      }),
+      () => ({ jumpTo, next, prev, getIndex: () => index }),
       [jumpTo, next, prev, index]
     );
 
-    // Autoplay: set/reset mỗi khi index đổi (và khi bật/tắt autoplay)
+    // pause when offscreen / background
+    const rootRef = useRef<HTMLElement | null>(null);
+    const visibleRef = useRef(true);
+    useEffect(() => {
+      const el = rootRef.current;
+      if (!el) return;
+      const io = new IntersectionObserver(
+        ([e]) => (visibleRef.current = e.isIntersecting),
+        { threshold: 0.1 }
+      );
+      io.observe(el);
+      const onVis = () => (visibleRef.current = !document.hidden);
+      document.addEventListener("visibilitychange", onVis);
+      return () => {
+        io.disconnect();
+        document.removeEventListener("visibilitychange", onVis);
+      };
+    }, []);
+
+    // ✅ chỉ còn MỘT resetTimer – có kiểm tra visibleRef
     const resetTimer = useCallback(() => {
       if (!autoplay) return;
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
-        if (!hoverRef.current && !isAnimating) {
+        if (!hoverRef.current && !isAnimating && visibleRef.current) {
           go(1);
         }
       }, intervalMs);
@@ -131,7 +138,7 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
       };
     }, [index, onChange, resetTimer]);
 
-    // Touch / swipe
+    // touch
     const handleTouchStart = (x: number) => (startX.current = x);
     const handleTouchMove = (x: number) => {
       const s = startX.current;
@@ -143,41 +150,32 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
       }
     };
 
-    // Variants: prev = next mượt, không đảo DOM
-    const MAX_SCALE = 1 + 0.12 * intensity; // 1.0 .. ~1.12
-    const MIN_SCALE = 1 - 0.04 * intensity; // 1.0 .. ~0.96
-    const BLUR_IN = 8 * intensity; // px
-
+    // variants
+    const MAX_SCALE = 1 + 0.12 * intensity;
+    const MIN_SCALE = 1 - 0.04 * intensity;
     const variants: Variants = useMemo(
       () => ({
         enter: (direction: 1 | -1) => ({
           opacity: 0,
           scale: direction === 1 ? MAX_SCALE : MIN_SCALE,
-          filter: `blur(${Math.max(2, BLUR_IN - 2)}px)`,
         }),
-        center: {
-          opacity: 1,
-          scale: 1,
-          filter: "blur(0px)",
-          transition: transitionIn,
-        },
+        center: { opacity: 1, scale: 1, transition: transitionIn },
         exit: (direction: 1 | -1) => ({
           opacity: 0,
           scale: direction === 1 ? 1.02 * MAX_SCALE : 1.0,
-          filter: `blur(${BLUR_IN}px)`,
           transition: transitionOut,
         }),
       }),
-      [BLUR_IN, MAX_SCALE, MIN_SCALE, transitionIn, transitionOut]
+      [MAX_SCALE, MIN_SCALE, transitionIn, transitionOut]
     );
 
-    // Progress animation key
+    // progress bar key
     const [progressKey, setProgressKey] = useState(0);
     useEffect(() => {
       setProgressKey((k) => k + 1);
     }, [index, intervalMs]);
 
-    // Safety: tránh kẹt isAnimating (edge case)
+    // safety
     useEffect(() => {
       if (!isAnimating) return;
       const t = setTimeout(() => setIsAnimating(false), 1500);
@@ -186,14 +184,14 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
 
     return (
       <section
-        className="relative h-[100svh] w-full overflow-hidden bg-black"
+        ref={rootRef as any}
+        className="relative h-full w-full overflow-hidden bg-black"
         onMouseEnter={() => (hoverRef.current = true)}
         onMouseLeave={() => (hoverRef.current = false)}
         onTouchStart={(e) => handleTouchStart(e.touches[0].clientX)}
         onTouchMove={(e) => handleTouchMove(e.touches[0].clientX)}
         onTouchEnd={() => (startX.current = null)}
       >
-        {/* Slides */}
         <div className="absolute inset-0">
           <AnimatePresence
             initial={false}
@@ -201,7 +199,6 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
             mode="popLayout"
             onExitComplete={() => {
               setIsAnimating(false);
-              // nếu có yêu cầu chờ, thực hiện ngay khi xong animation
               if (pendingRef.current != null) {
                 const i = pendingRef.current;
                 pendingRef.current = null;
@@ -217,19 +214,36 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
               initial="enter"
               animate="center"
               exit="exit"
+              style={{
+                willChange: "opacity, transform",
+                contain: "layout paint size",
+              }}
             >
               <Image
                 src={slides[index].src}
+                className="object-cover"
                 alt={
                   slides[index].alt ||
                   slides[index].heading ||
                   `Slide ${index + 1}`
                 }
                 fill
-                priority
+                priority={index === 0}
                 sizes="100vw"
-                className="object-cover will-change-transform"
+                placeholder={slides[index].blurDataURL ? "blur" : undefined}
+                blurDataURL={slides[index].blurDataURL}
               />
+              {slides[(index + 1) % count] && (
+                <Image
+                  src={slides[(index + 1) % count].src}
+                  alt=""
+                  fill
+                  sizes="100vw"
+                  priority={false}
+                  style={{ visibility: "hidden", pointerEvents: "none" }}
+                  aria-hidden
+                />
+              )}
 
               {(slides[index].heading || slides[index].subheading) && (
                 <div className="absolute inset-x-0 top-[18%] z-20 mx-auto max-w-6xl px-6 text-white drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
@@ -276,13 +290,11 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
                 </div>
               )}
 
-              {/* vignette */}
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_60%_at_50%_40%,rgba(0,0,0,0)_0%,rgba(0,0,0,0)_55%,rgba(0,0,0,0.35)_100%)]" />
             </motion.div>
           </AnimatePresence>
         </div>
 
-        {/* Arrows */}
         <div className="absolute inset-y-0 left-0 right-0 z-30 flex items-center justify-between px-3">
           <button
             onClick={prev}
@@ -302,7 +314,6 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
           </button>
         </div>
 
-        {/* Segmented progress ở TOP (click được) */}
         <div className="absolute left-0 right-0 top-0 z-30 flex gap-2 px-4 py-3">
           {slides.map((_, i) => (
             <button
