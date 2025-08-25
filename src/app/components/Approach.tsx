@@ -25,7 +25,13 @@ export function Approach() {
 
   return (
     <section className="relative mt-20 overflow-hidden select-none">
-      <div className="relative h-[80vh]">
+      <h2
+        className="text-center text-5xl font-extrabold tracking-wide text-gray-700"
+        style={{ fontFamily: '"Ms Madi", cursive' }}
+      >
+        Video
+      </h2>
+      <div className="relative h-[80vh] mt-4">
         {/* ảnh khi chưa phát */}
         {!showVideo && (
           <Image

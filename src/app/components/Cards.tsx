@@ -99,7 +99,13 @@ export function Cards() {
 
   return (
     <section id="services" className="mx-auto max-w-6xl px-6 pb-16 pt-14">
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <h2
+        className="text-center text-5xl font-extrabold tracking-wide text-gray-700"
+        style={{ fontFamily: '"Ms Madi", cursive' }}
+      >
+        Albums
+      </h2>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mt-4">
         {albums.map((item) => (
           <article
             key={item.label}
