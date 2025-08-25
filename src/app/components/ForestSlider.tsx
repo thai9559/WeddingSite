@@ -98,7 +98,8 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
     );
 
     // pause when offscreen / background
-    const rootRef = useRef<HTMLElement | null>(null);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+
     const visibleRef = useRef(true);
     useEffect(() => {
       const el = rootRef.current;
@@ -184,7 +185,7 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
 
     return (
       <section
-        ref={rootRef as any}
+        ref={rootRef}
         className="relative h-full w-full overflow-hidden bg-black"
         onMouseEnter={() => (hoverRef.current = true)}
         onMouseLeave={() => (hoverRef.current = false)}
@@ -318,7 +319,9 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
           {slides.map((_, i) => (
             <button
               key={i}
-              onClick={() => (i === index ? null : jumpTo(i))}
+              onClick={() => {
+                if (i !== index) jumpTo(i);
+              }}
               aria-label={`Go to slide ${i + 1}`}
               className="group relative h-[3px] flex-1 overflow-hidden rounded bg-white/20"
               disabled={isAnimating}
