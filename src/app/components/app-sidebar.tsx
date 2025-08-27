@@ -18,8 +18,8 @@ import {
 // Menu Admin
 const items = [
   { title: "Tổng quan", url: "/admin", icon: LayoutDashboard },
-  { title: "Upload Albums", url: "/admin/upload-albums", icon: Images },
-  { title: "Upload Banner", url: "/admin/upload-banner", icon: ImageUp },
+  { title: "Upload Albums", url: "/admin/albums", icon: Images },
+  { title: "Upload Banner", url: "/admin/banner", icon: ImageUp },
 ];
 
 export function AppSidebar() {

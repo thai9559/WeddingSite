@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { supabaseServer } from "../lib/supabase-server";
-
+import { Toaster } from "sonner";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/app/components/app-sidebar";
 export const metadata = {
@@ -40,6 +40,7 @@ export default async function AdminLayout({
 
         <main className="container mx-auto w-full max-w-[1400px] flex-1 p-4 lg:p-6">
           {children}
+          <Toaster position="top-center" richColors />
         </main>
       </div>
     </SidebarProvider>
