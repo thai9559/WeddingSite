@@ -7,6 +7,7 @@ import { SiteFooter } from "./components/SiteFooter";
 import WeddingGallery from "./components/WeddingGallery";
 import { makeWeddingData } from "./lib/wedding.mapper";
 import { weddingInput } from "./data/wedding.data";
+import Link from "next/link";
 
 export default function Home() {
   const data = makeWeddingData(weddingInput);
@@ -16,8 +17,15 @@ export default function Home() {
       <Header />
       <Hero />
       <WeddingGallery data={data} />
+      <div className="text-center my-8">
+        <Link
+          href="/rsvp"
+          className="inline-block bg-black text-white px-6 py-3 rounded-xl hover:opacity-90"
+        >
+          Đăng ký tham dự 💌
+        </Link>
+      </div>
       <Approach />
-      {/* ⬇️ Thêm id để WeddingGallery cuộn tới */}
       <section id="album-cards" className="scroll-mt-24">
         <Cards />
       </section>

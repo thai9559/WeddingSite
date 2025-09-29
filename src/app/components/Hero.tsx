@@ -72,16 +72,7 @@ export function Hero() {
       />
 
       {/* Header overlay (không chặn click) */}
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between px-6 py-5 text-white mix-blend-difference">
-        <div className="pointer-events-auto text-[18px] tracking-[0.4em] uppercase">
-          Nhut Quang & Hai Yen
-        </div>
-        <div className="pointer-events-auto grid size-8 place-items-center">
-          <span className="mb-1 block h-px w-5 bg-white" />
-          <span className="mb-1 block h-px w-5 bg-white" />
-          <span className="block h-px w-5 bg-white" />
-        </div>
-      </header>
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between px-6 py-5 text-white mix-blend-difference"></header>
 
       {/* Dots ở ĐÁY – click để nhảy slide qua ref */}
       <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2 flex gap-2">
