@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { supabaseBrowser } from "@/app/lib/supabase-browser";
 
 type RelationKey =
   | "bride_friend"
@@ -59,27 +58,28 @@ export default function RSVPForm() {
     e.preventDefault();
     setErr(null);
     setOk(null);
-
     if (!canSubmit) return;
 
     setSubmitting(true);
     try {
-      const supabase = supabaseBrowser;
-      const { error } = await supabase.from("wedding_rsvps").insert({
-        event_key: "wedding-2025",
-        name: form.name.trim(),
-        phone: form.phone?.trim() || null,
-        guests_count: form.guests_count,
-        relation_key: form.relation_key,
-        relation_note:
-          form.relation_key === "other"
-            ? form.relation_note?.trim() || null
-            : null,
-        message: form.message?.trim() || null,
+      const res = await fetch("/api/rsvp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_key: "wedding-2025",
+          name: form.name,
+          phone: form.phone,
+          guests_count: form.guests_count,
+          relation_key: form.relation_key,
+          relation_note:
+            form.relation_key === "other" ? form.relation_note : undefined,
+          message: form.message,
+        }),
       });
 
-      if (error) {
-        setErr(error.message);
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error || "Gửi thất bại.");
       } else {
         setOk("Đăng ký thành công! Hẹn gặp bạn tại đám cưới 💖");
         setForm({
@@ -91,6 +91,8 @@ export default function RSVPForm() {
           message: "",
         });
       }
+    } catch (e: any) {
+      setErr("Có lỗi mạng. Vui lòng thử lại.");
     } finally {
       setSubmitting(false);
     }
