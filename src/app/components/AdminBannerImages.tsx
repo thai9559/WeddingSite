@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import {
   Dialog,
   DialogContent,
@@ -96,13 +97,19 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
               key={img.id}
               className="group relative overflow-hidden rounded border bg-white"
             >
-              <img
+              <Image
                 src={currentSrc}
-                alt=""
-                loading="lazy"
+                alt={`banner ${img.id}`}
+                // Kích thước cơ sở (giữ tỉ lệ 4:3 bằng class)
+                width={800}
+                height={600}
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                 className="aspect-[4/3] w-full object-cover cursor-zoom-in"
                 onClick={() => setPreview(img)}
                 onError={() => handleImgError(img)}
+                // Admin: tắt tối ưu để khỏi cần cấu hình domains ngay
+                unoptimized
+                priority={false}
               />
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/30 transition">
                 <Button
@@ -157,11 +164,16 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
           </DialogHeader>
           <div className="p-4">
             {preview && (
-              <img
+              <Image
                 src={srcMap[preview.id] ?? preview.url}
-                alt=""
+                alt={`banner ${preview.id}`}
+                width={1600}
+                height={1200}
+                sizes="90vw"
                 className="h-auto max-h-[75vh] w-full rounded object-contain"
                 onError={() => handleImgError(preview)}
+                unoptimized
+                priority
               />
             )}
           </div>

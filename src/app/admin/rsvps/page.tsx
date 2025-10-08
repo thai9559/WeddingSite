@@ -1,47 +1,80 @@
 // src/app/admin/rsvps/page.tsx
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
 import AdminRSVPTable from "./table";
-export const metadata = { title: "Admin | RSVPs" };
 
-type Row = {
+type SearchParams = { event?: string };
+
+// Kiểu đúng với DB (có thể null)
+type DBRow = {
   id: number;
   event_key: string;
   name: string | null;
   phone: string | null;
-  guests_count: number;
+  guests_count: number | null;
   relation_key: string;
   relation_note: string | null;
   message: string | null;
   created_at: string;
 };
 
-function groupCounts(rows: Row[]) {
-  const byRelation: Record<string, { people: number; guests: number }> = {};
+// Kiểu cho bảng (không null)
+export type TableRow = Omit<DBRow, "guests_count"> & {
+  guests_count: number;
+};
+
+type Totals = { people: number; guests: number };
+
+function humanizeRelation(key: string) {
+  return key.replace(/_/g, " ");
+}
+
+function groupCounts(rows: TableRow[]) {
+  const byRelation = new Map<string, Totals>();
   let totalPeople = 0;
   let totalGuests = 0;
 
   for (const r of rows) {
+    const guests = r.guests_count ?? 0;
     totalPeople += 1;
-    totalGuests += r.guests_count ?? 0;
-    if (!byRelation[r.relation_key])
-      byRelation[r.relation_key] = { people: 0, guests: 0 };
-    byRelation[r.relation_key].people += 1;
-    byRelation[r.relation_key].guests += r.guests_count ?? 0;
+    totalGuests += guests;
+
+    const k = r.relation_key || "khác";
+    const prev = byRelation.get(k) ?? { people: 0, guests: 0 };
+    byRelation.set(k, {
+      people: prev.people + 1,
+      guests: prev.guests + guests,
+    });
   }
-  return { byRelation, totalPeople, totalGuests };
+
+  return {
+    byRelationEntries: Array.from(byRelation.entries()),
+    totalPeople,
+    totalGuests,
+  };
 }
 
-export default async function AdminRSVPPage({
-  searchParams,
-}: {
-  searchParams?: { event?: string };
+// ⚠️ Giữ generateMetadata (động), KHÔNG export metadata cố định
+export async function generateMetadata(props: {
+  searchParams?: Promise<SearchParams>;
 }) {
-  const eventKey = searchParams?.event || "wedding-2025";
+  const sp = (await props.searchParams) ?? {};
+  const title = sp.event ? `Admin | RSVPs — ${sp.event}` : "Admin | RSVPs";
+  return { title };
+}
+
+export default async function AdminRSVPPage(props: {
+  // Khớp checker tự sinh của Next: Promise<any>
+  searchParams?: Promise<SearchParams>;
+}) {
+  const sp = (await props.searchParams) ?? {};
+  const eventKey = sp.event || "wedding-2025";
 
   const admin = supabaseAdmin();
   const { data, error } = await admin
     .from("wedding_rsvps")
-    .select("*")
+    .select(
+      "id,event_key,name,phone,guests_count,relation_key,relation_note,message,created_at"
+    )
     .eq("event_key", eventKey)
     .order("created_at", { ascending: false });
 
@@ -54,21 +87,30 @@ export default async function AdminRSVPPage({
     );
   }
 
-  const rows = (data ?? []) as Row[];
-  const { byRelation, totalPeople, totalGuests } = groupCounts(rows);
+  // 1) rows từ DB (có thể null)
+  const dbRows = (data ?? []) as DBRow[];
+
+  // 2) Chuẩn hoá sang TableRow (guests_count luôn là number)
+  const tableRows: TableRow[] = dbRows.map((r) => ({
+    ...r,
+    guests_count: r.guests_count ?? 0,
+  }));
+
+  const { byRelationEntries, totalPeople, totalGuests } =
+    groupCounts(tableRows);
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-10">
       <div className="flex items-end justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-semibold">RSVPs — {eventKey}</h1>
-          <p className="text-sm text-neutral-600">
-            Tổng số khách đăng ký: <b>{totalPeople}</b> · Tổng số ghế
+          <p className="mt-1 text-sm text-neutral-600">
+            Tổng khách đăng ký: <b>{totalPeople}</b> · Tổng số ghế
             (guests_count): <b>{totalGuests}</b>
           </p>
         </div>
 
-        {/* lọc theo event_key bằng query param */}
+        {/* Lọc theo event_key bằng query param */}
         <form className="flex items-center gap-2" action="/admin/rsvps">
           <input
             name="event"
@@ -76,7 +118,10 @@ export default async function AdminRSVPPage({
             placeholder="event_key"
             className="border rounded-xl px-3 py-2 text-sm"
           />
-          <button className="px-3 py-2 rounded-xl bg-black text-white text-sm">
+          <button
+            className="px-3 py-2 rounded-xl bg-black text-white text-sm"
+            type="submit"
+          >
             Lọc
           </button>
         </form>
@@ -84,20 +129,25 @@ export default async function AdminRSVPPage({
 
       {/* Summary by relation */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        {Object.entries(byRelation).map(([k, v]) => (
+        {byRelationEntries.map(([k, v]) => (
           <div key={k} className="rounded-xl border px-3 py-3">
             <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">
-              {k.replace("_", " ")}
+              {humanizeRelation(k)}
             </div>
             <div className="text-sm">
               <b>{v.people}</b> người · <b>{v.guests}</b> ghế
             </div>
           </div>
         ))}
+        {byRelationEntries.length === 0 && (
+          <div className="col-span-full text-sm text-neutral-500">
+            Chưa có bản ghi nào cho sự kiện này.
+          </div>
+        )}
       </div>
 
-      {/* Bảng chi tiết (client để filter/search nhanh) */}
-      <AdminRSVPTable rows={rows} />
+      {/* Bảng chi tiết */}
+      <AdminRSVPTable rows={tableRows} />
     </main>
   );
 }

@@ -91,8 +91,11 @@ export default function RSVPForm() {
           message: "",
         });
       }
-    } catch (e: any) {
-      setErr("Có lỗi mạng. Vui lòng thử lại.");
+    } catch (err: unknown) {
+      // ← thay any bằng unknown
+      const msg =
+        err instanceof Error ? err.message : "Có lỗi mạng. Vui lòng thử lại.";
+      setErr(msg);
     } finally {
       setSubmitting(false);
     }

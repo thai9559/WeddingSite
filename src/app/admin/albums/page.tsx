@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { uploadAlbumAction } from "./actions";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import { AdminAlbumImages } from "@/components/AdminAlbumImages";
+import { toast } from "sonner";
+
 type Album = { id: number; key: string; title: string };
 type AlbumImage = {
   id: number;
@@ -11,11 +13,9 @@ type AlbumImage = {
   caption?: string | null;
   sort?: number | null;
 };
-import { toast } from "sonner";
 
 // ✅ Đồng bộ với server action: bucket "wedding" + path "albums/<albumKey>/..."
 const BUCKET = "wedding";
-const FOLDER_PREFIX = "albums";
 
 /** Lấy storage path tương đối (relative vào bucket), đồng bộ với server. */
 function extractStoragePathFromUrl(publicUrl: string): string | null {
@@ -26,56 +26,9 @@ function extractStoragePathFromUrl(publicUrl: string): string | null {
   return decodeURIComponent(tail.replace(/^\//, ""));
 }
 
-/** Liệt kê đệ quy toàn bộ file path trong 1 folder của bucket. */
-async function listAllPaths(bucket: string, folder: string): Promise<string[]> {
-  const paths: string[] = [];
-  const stack: string[] = [folder.replace(/^\/+|\/+$/g, "")];
-
-  while (stack.length) {
-    const cur = stack.pop()!;
-    const { data, error } = await supabaseBrowser.storage
-      .from(bucket)
-      .list(cur || "", {
-        limit: 1000,
-        sortBy: { column: "name", order: "asc" },
-      });
-    if (error) throw error;
-
-    for (const item of data ?? []) {
-      const it: any = item;
-      const isFolder = it.id == null;
-      if (isFolder) {
-        const sub = [cur, it.name]
-          .filter(Boolean)
-          .join("/")
-          .replace(/\/+$/g, "");
-        if (sub && sub !== cur) stack.push(sub);
-      } else {
-        const p = [cur, it.name].filter(Boolean).join("/");
-        paths.push(p.replace(/^\/+/, ""));
-      }
-    }
-  }
-  return paths;
-}
-
-/** Helper: unique by key */
-function uniqueBy<T, K extends string | number>(arr: T[], getKey: (x: T) => K) {
-  const seen = new Set<K>();
-  const out: T[] = [];
-  for (const it of arr) {
-    const k = getKey(it);
-    if (!seen.has(k)) {
-      seen.add(k);
-      out.push(it);
-    }
-  }
-  return out;
-}
-
 export default function AdminUploadPage() {
   const [albums, setAlbums] = useState<Album[]>([]);
-  const [selectedAlbumId, setSelectedAlbumId] = useState("");
+  const [selectedAlbumId, setSelectedAlbumId] = useState<string>("");
   const [files, setFiles] = useState<File[]>([]);
   const [cover, setCover] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -87,7 +40,6 @@ export default function AdminUploadPage() {
   const [errorImages, setErrorImages] = useState("");
 
   // resync/delete state
-  const [syncing, setSyncing] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const selectedAlbum = useMemo(
@@ -102,51 +54,61 @@ export default function AdminUploadPage() {
         .from("albums")
         .select("id, key, title")
         .order("id", { ascending: true });
-      if (!error) setAlbums(data || []);
+
+      if (!error) setAlbums((data as Album[]) || []);
       else console.error("Lỗi load albums:", error.message);
     })();
   }, []);
 
   /** Truy vấn ảnh an toàn: thử string -> nếu trống, thử number */
-  async function fetchImagesDual(albumIdStr: string) {
-    // 1) string
-    let { data, error } = await supabaseBrowser
-      .from("images")
-      .select("id, url, caption, sort")
-      .eq("album_id", albumIdStr)
-      .order("sort", { ascending: true, nullsFirst: true })
-      .order("id", { ascending: true });
-    if (error) throw error;
-    if (data?.length) return data;
-
-    // 2) number
-    const albumIdNum = Number(albumIdStr);
-    if (!Number.isNaN(albumIdNum)) {
-      const r2 = await supabaseBrowser
+  const fetchImagesDual = useCallback(
+    async (albumIdStr: string): Promise<AlbumImage[]> => {
+      // 1) string
+      const r1 = await supabaseBrowser
         .from("images")
         .select("id, url, caption, sort")
-        .eq("album_id", albumIdNum)
+        .eq("album_id", albumIdStr)
         .order("sort", { ascending: true, nullsFirst: true })
         .order("id", { ascending: true });
-      if (r2.error) throw r2.error;
-      return r2.data || [];
-    }
-    return [];
-  }
+
+      if (r1.error) throw r1.error;
+      if (r1.data?.length) return (r1.data as AlbumImage[]) ?? [];
+
+      // 2) number
+      const albumIdNum = Number(albumIdStr);
+      if (!Number.isNaN(albumIdNum)) {
+        const r2 = await supabaseBrowser
+          .from("images")
+          .select("id, url, caption, sort")
+          .eq("album_id", albumIdNum)
+          .order("sort", { ascending: true, nullsFirst: true })
+          .order("id", { ascending: true });
+
+        if (r2.error) throw r2.error;
+        return (r2.data as AlbumImage[]) ?? [];
+      }
+      return [];
+    },
+    []
+  );
 
   // 🔄 load ảnh của album đang chọn
-  async function reloadImages(albumId: string) {
-    setLoadingImages(true);
-    setErrorImages("");
-    try {
-      const data = await fetchImagesDual(albumId);
-      setImages(data || []);
-    } catch (e: any) {
-      setErrorImages(e.message || "Không tải được ảnh.");
-    } finally {
-      setLoadingImages(false);
-    }
-  }
+  const reloadImages = useCallback(
+    async (albumId: string) => {
+      setLoadingImages(true);
+      setErrorImages("");
+      try {
+        const data = await fetchImagesDual(albumId);
+        setImages(data || []);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Không tải được ảnh.";
+        setErrorImages(msg);
+      } finally {
+        setLoadingImages(false);
+      }
+    },
+    [fetchImagesDual]
+  );
 
   useEffect(() => {
     if (!selectedAlbumId) {
@@ -154,30 +116,9 @@ export default function AdminUploadPage() {
       setErrorImages("");
       return;
     }
+    // ✅ thêm reloadImages vào deps theo lint
     reloadImages(selectedAlbumId);
-  }, [selectedAlbumId, result]);
-
-  /** Lấy rows images theo album_id với dual-lookup */
-  async function fetchRowsByAlbumIdDual(albumIdStr: string) {
-    const out: { id: number; url: string }[] = [];
-
-    const r1 = await supabaseBrowser
-      .from("images")
-      .select("id, url")
-      .eq("album_id", albumIdStr);
-    if (!r1.error && r1.data) out.push(...r1.data);
-
-    const albumIdNum = Number(albumIdStr);
-    if (!Number.isNaN(albumIdNum)) {
-      const r2 = await supabaseBrowser
-        .from("images")
-        .select("id, url")
-        .eq("album_id", albumIdNum);
-      if (!r2.error && r2.data) out.push(...r2.data);
-    }
-
-    return uniqueBy(out, (x) => x.id);
-  }
+  }, [selectedAlbumId, result, reloadImages]);
 
   // ❌ Xoá 1 ảnh: Storage + DB
   async function handleDeleteOne(img: AlbumImage) {
@@ -198,8 +139,9 @@ export default function AdminUploadPage() {
       if (delErr) throw delErr;
 
       setImages((prev) => prev.filter((x) => x.id !== img.id));
-    } catch (e: any) {
-      alert("Xoá ảnh lỗi: " + (e.message || e));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert("Xoá ảnh lỗi: " + msg);
     } finally {
       setDeletingId(null);
     }
@@ -233,8 +175,9 @@ export default function AdminUploadPage() {
             // reset input
             setFiles([]);
             setCover(null);
-          } catch (e: any) {
-            setResult("❌ ERROR: " + e.message);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setResult("❌ ERROR: " + msg);
           } finally {
             setBusy(false);
           }
@@ -272,7 +215,7 @@ export default function AdminUploadPage() {
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => setCover(e.target.files?.[0] || null)}
+              onChange={(e) => setCover(e.target.files?.[0] ?? null)}
               className="mt-1 w-full rounded border p-2"
             />
           </div>
@@ -282,7 +225,7 @@ export default function AdminUploadPage() {
               type="file"
               accept="image/*"
               multiple
-              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
               className="mt-1 w-full rounded border p-2"
             />
             <div className="mt-2 text-xs text-neutral-500">

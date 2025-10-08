@@ -23,7 +23,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi">
+    <html
+      lang="vi"
+      className={`${geistSans.variable} ${geistMono.variable}`} // ✅ dùng biến ở đây
+    >
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
@@ -36,7 +39,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body className="font-sans bg-white text-neutral-900">
+        {" "}
+        {/* ✅ bạn có thể gắn font hoặc style chung ở đây */}
+        {children}
+      </body>
     </html>
   );
 }

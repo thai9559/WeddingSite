@@ -1,12 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { WeddingData } from "@/app/types/wedding";
 import {
   ForestSlider,
   type ForestSliderHandle,
-} from "@/app/components/ForestSlider"; // đường dẫn theo project của bạn
+} from "@/app/components/ForestSlider";
 
 export default function WeddingGallery({ data }: { data: WeddingData }) {
   // Album đang chọn (mặc định: album đầu tiên)
@@ -19,7 +19,6 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
     () => new Map(data.albums.map((a) => [a.key, a] as const)),
     [data.albums]
   );
-  const activeAlbum = activeAlbumKey ? albumMap.get(activeAlbumKey) : undefined;
 
   // Danh sách ảnh đang hiển thị (gallery theo album đang chọn)
   const activeList = useMemo(() => {
@@ -34,26 +33,25 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
     return data.gallery;
   }, [activeAlbumKey, albumMap, data.gallery]);
 
-  // Chỉ số slide hiện tại (đồng bộ với ForestSlider)
-  const [index, setIndex] = useState(0);
-  useEffect(() => setIndex(0), [activeAlbumKey]); // đổi album -> về ảnh đầu
-
+  // Slider ref để điều khiển next/prev
   const sliderRef = useRef<ForestSliderHandle | null>(null);
+  const prev = useCallback(() => sliderRef.current?.prev(), []);
+  const next = useCallback(() => sliderRef.current?.next(), []);
 
-  // Điều khiển slider
-  const prev = () => sliderRef.current?.prev();
-  const next = () => sliderRef.current?.next();
-  const jumpTo = (i: number) => sliderRef.current?.jumpTo(i);
-
-  // phím mũi tên
-  const onKey = useCallback((e: KeyboardEvent) => {
-    if (e.key === "ArrowLeft") prev();
-    if (e.key === "ArrowRight") next();
-  }, []);
+  // Khi đổi album -> nhảy về ảnh đầu tiên
   useEffect(() => {
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onKey]);
+    sliderRef.current?.jumpTo(0);
+  }, [activeAlbumKey]);
+
+  // Phím mũi tên trái/phải
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") prev();
+      if (e.key === "ArrowRight") next();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [prev, next]);
 
   // Lấy tiêu đề album đang chọn để hiển thị
   const activeAlbumTitle =
@@ -92,76 +90,23 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
         Câu chuyện qua từng khung hình
       </p>
 
-      {/* Lưới 2 cột: trái = gallery, phải = albums + thumbnails */}
+      {/* Lưới 2 cột: trái = gallery, phải = albums */}
       <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-[1fr_320px]">
-        {/* CỘT TRÁI: ForestSlider + caption + mô tả */}
+        {/* CỘT TRÁI: ForestSlider */}
         <div className="rounded-md border border-lime-400 p-6">
           <div className="flex flex-col gap-4">
-            {/* Slider toàn khung cao (thay thế <Image> lớn) */}
             <div className="relative mx-auto w-full max-w-2xl overflow-hidden rounded-md bg-gray-100 h-[70vh] md:h-[70vh] lg:h-[70vh] min-h-[300px]">
               <div className="absolute inset-0">
                 <ForestSlider
                   ref={sliderRef}
                   slides={slides}
-                  autoplay={true}
+                  autoplay
                   intervalMs={5000}
                   intensity={0.6}
-                  onChange={(i) => setIndex(i)}
                 />
               </div>
             </div>
 
-            {/* Caption + nút prev/next (điều khiển ForestSlider) */}
-            {/* <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-white/90 px-6 py-7 md:py-8 min-h-24 shadow">
-              <div className="flex items-center gap-3">
-                <span className="grid h-8 w-8 place-items-center rounded-sm bg-green-500 text-xs font-bold text-white">
-                  {index + 1}
-                </span>
-                <p className="text-base text-gray-700">
-                  {activeAlbumTitle ? `${activeAlbumTitle}: ` : "Câu chuyện "}
-                  {activeList[index]?.caption}
-                </p>
-              </div>
-
-               <div className="flex gap-2">
-                <button
-                  onClick={prev}
-                  aria-label="Ảnh trước"
-                  className="grid h-9 w-9 place-items-center rounded bg-green-500 text-white hover:bg-green-700 cursor-pointer"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M15 18l-6-6 6-6" />
-                  </svg>
-                </button>
-                <button
-                  onClick={next}
-                  aria-label="Ảnh kế"
-                  className="grid h-9 w-9 place-items-center rounded bg-green-500 text-white hover:bg-green-700 cursor-pointer"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M9 6l6 6-6 6" />
-                  </svg>
-                </button>
-              </div> 
-            </div> */}
-
-            {/* Mô tả dưới ảnh */}
-            {/* <div className="rounded bg-gray-50 p-5 text-sm leading-relaxed text-gray-600">
-              {activeAlbum?.description ??
-                "Bộ ảnh cưới được kể lại như một cuốn nhật ký nhỏ. Chạm vào từng ảnh để xem câu chuyện tương ứng."}
-            </div> */}
             <div className="flex justify-end">
               <button
                 onClick={scrollToCards}
@@ -182,8 +127,8 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
           </div>
         </div>
 
-        {/* CỘT PHẢI: Albums ở trên, thumbnails theo album ở dưới */}
-        <aside className="space-y-4 p-8 md:p-0">
+        {/* CỘT PHẢI: Albums */}
+        <aside className="space-y-4 p-8 md:p-0" id="album-cards">
           <h3
             className="text-2xl font-medium text-gray-800"
             style={{ fontFamily: '"Ms Madi", cursive' }}
@@ -220,40 +165,6 @@ export default function WeddingGallery({ data }: { data: WeddingData }) {
               );
             })}
           </div>
-
-          <hr className="border-gray-200" />
-          {/* Thumbnails của album đang chọn */}
-          {/* <ul className="hidden md:grid grid-cols-2 gap-5">
-            {activeList.map((img, i) => (
-              <li
-                key={`${activeAlbumKey ?? "default"}-${i}`}
-                className={`relative cursor-pointer overflow-hidden rounded border ${
-                  i === index ? "ring-2 ring-green-500" : "hover:opacity-90"
-                }`}
-                onClick={() => jumpTo(i)}
-                aria-label={`Chọn ảnh ${i + 1}`}
-              >
-                <div
-                  className={`absolute left-2 top-2 z-10 grid h-6 w-6 place-items-center rounded-sm text-[10px] font-bold transition-colors duration-200 ${
-                    i === index
-                      ? "bg-green-500 text-white shadow"
-                      : "bg-white/95 text-green-600"
-                  }`}
-                >
-                  {i + 1}
-                </div>
-                <div className="relative aspect-square">
-                  <Image
-                    src={img.url}
-                    alt={`Thumbnail ${i + 1}`}
-                    fill
-                    sizes="180px"
-                    className="object-cover object-top transition-transform duration-200 hover:scale-105"
-                  />
-                </div>
-              </li>
-            ))}
-          </ul> */}
         </aside>
       </div>
     </section>

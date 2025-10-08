@@ -1,6 +1,26 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
 
+type RelationKey =
+    | "bride_friend"
+    | "groom_friend"
+    | "coworker"
+    | "family"
+    | "other";
+
+type RsvpRow = {
+    id: string | number;
+    event_key: string;
+    name: string;
+    phone?: string | null;
+    guests_count: number;
+    relation_key: RelationKey | string; // dữ liệu cũ có thể là string tự do
+    relation_note?: string | null;
+    message?: string | null;
+    source_ip?: string | null;
+    created_at: string; // ISO
+};
+
 export async function GET(req: Request) {
     const url = new URL(req.url);
     const event = url.searchParams.get("event") || "wedding-2025";
@@ -16,7 +36,8 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    const rows = data ?? [];
+    const rows = (data ?? []) as RsvpRow[];
+
     const header = [
         "id",
         "event_key",
@@ -58,9 +79,11 @@ export async function GET(req: Request) {
     });
 }
 
-function q(v: any) {
-    const s = v == null ? "" : String(v);
-    // escape CSV
+/** Quote + escape giá trị CSV an toàn, không dùng any */
+function q(v: unknown): string {
+    if (v === null || v === undefined) return "";
+    const s = String(v);
+    // escape CSV: nếu có " , hoặc xuống dòng thì quote + escape
     if (s.includes('"') || s.includes(",") || s.includes("\n")) {
         return `"${s.replace(/"/g, '""')}"`;
     }

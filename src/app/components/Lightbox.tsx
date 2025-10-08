@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Props = {
@@ -9,9 +10,9 @@ type Props = {
   title?: string;
 };
 
-const MIN = 1,
-  MAX = 4,
-  STEP = 0.5;
+const MIN = 1;
+const MAX = 4;
+const STEP = 0.5;
 
 export default function LightBox({
   images,
@@ -21,6 +22,7 @@ export default function LightBox({
   title,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  // next/image forward ref về <img>, nên vẫn dùng HTMLImageElement
   const imgRef = useRef<HTMLImageElement | null>(null);
 
   const [scale, setScale] = useState(1);
@@ -48,18 +50,28 @@ export default function LightBox({
 
   // giữ ảnh trong khung khi pan
   const clampPan = useCallback((s: number, nx: number, ny: number) => {
-    const c = wrapRef.current,
-      img = imgRef.current;
+    const c = wrapRef.current;
+    const img = imgRef.current;
     if (!c || !img) return { x: nx, y: ny };
-    const cw = c.clientWidth,
-      ch = c.clientHeight;
-    const nw = img.naturalWidth,
-      nh = img.naturalHeight;
+
+    const cw = c.clientWidth;
+    const ch = c.clientHeight;
+
+    // Lấy kích thước tự nhiên của ảnh
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+
+    // fit ảnh vào khung khi scale = 1
     const fit = Math.min(cw / nw, ch / nh);
-    const dw = nw * fit * s,
-      dh = nh * fit * s;
-    const bx = Math.max(0, (dw - cw) / 2),
-      by = Math.max(0, (dh - ch) / 2);
+
+    // kích thước hiển thị sau khi zoom
+    const dw = nw * fit * s;
+    const dh = nh * fit * s;
+
+    // phần tràn ra để giới hạn pan
+    const bx = Math.max(0, (dw - cw) / 2);
+    const by = Math.max(0, (dh - ch) / 2);
+
     return {
       x: Math.min(bx, Math.max(-bx, nx)),
       y: Math.min(by, Math.max(-by, ny)),
@@ -68,22 +80,25 @@ export default function LightBox({
 
   const setZoom = useCallback(
     (next: number, anchor?: { x: number; y: number }) => {
-      next = Math.max(MIN, Math.min(MAX, next));
+      const clamped = Math.max(MIN, Math.min(MAX, next));
+
       if (anchor && wrapRef.current) {
         const c = wrapRef.current;
         const rect = c.getBoundingClientRect();
         const ax = anchor.x - rect.left - c.clientWidth / 2;
         const ay = anchor.y - rect.top - c.clientHeight / 2;
-        const k = next / scale;
+        const k = clamped / scale;
+
         const nx = ax - k * (ax - tx);
         const ny = ay - k * (ay - ty);
-        const p = clampPan(next, nx, ny);
-        setScale(next);
+
+        const p = clampPan(clamped, nx, ny);
+        setScale(clamped);
         setTx(p.x);
         setTy(p.y);
       } else {
-        const p = clampPan(next, tx, ty);
-        setScale(next);
+        const p = clampPan(clamped, tx, ty);
+        setScale(clamped);
         setTx(p.x);
         setTy(p.y);
       }
@@ -97,12 +112,13 @@ export default function LightBox({
   // Mouse drag pan
   const dragging = useRef(false);
   const start = useRef({ x: 0, y: 0, sx: 0, sy: 0 });
-  const onMouseDown = (e: React.MouseEvent) => {
+
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (scale === 1) return;
     dragging.current = true;
     start.current = { x: e.clientX, y: e.clientY, sx: tx, sy: ty };
   };
-  const onMouseMove = (e: React.MouseEvent) => {
+  const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!dragging.current) return;
     const nx = start.current.sx + (e.clientX - start.current.x);
     const ny = start.current.sy + (e.clientY - start.current.y);
@@ -114,16 +130,16 @@ export default function LightBox({
     dragging.current = false;
   };
 
-  // Touch pan (dùng number clientX/clientY để tránh lỗi React.Touch)
+  // Touch pan
   const tDrag = useRef<null | { x: number; y: number; sx: number; sy: number }>(
     null
   );
-  const onTouchStart = (e: React.TouchEvent) => {
+  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (scale === 1) return;
-    const t = e.touches[0]; // React.Touch OK: ta chỉ lấy clientX/Y
+    const t = e.touches[0];
     tDrag.current = { x: t.clientX, y: t.clientY, sx: tx, sy: ty };
   };
-  const onTouchMove = (e: React.TouchEvent) => {
+  const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     if (!tDrag.current) return;
     const t = e.touches[0];
     const nx = tDrag.current.sx + (t.clientX - tDrag.current.x);
@@ -137,7 +153,7 @@ export default function LightBox({
   };
 
   // Click ảnh: zoom in theo điểm bấm; nếu đang max → về 100% giữa khung
-  const onImageClick = (e: React.MouseEvent) => {
+  const onImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
     if (scale >= MAX) {
       setZoom(1);
       setTx(0);
@@ -159,7 +175,7 @@ export default function LightBox({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* top bar tối giản */}
+      {/* top bar */}
       <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4 text-white">
         <div className="text-xs tracking-[0.35em] opacity-80">
           {title ? `${title} · ` : ""}
@@ -225,10 +241,13 @@ export default function LightBox({
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
         >
-          <img
+          <Image
             ref={imgRef}
             src={images[index]}
             alt={`image ${index + 1}`}
+            // đặt width/height để Next tối ưu; dùng số giả định, layout vẫn fit theo CSS
+            width={1600}
+            height={1200}
             className="max-h-[85vh] max-w-[90vw] select-none touch-none"
             style={{
               transform,
@@ -240,6 +259,9 @@ export default function LightBox({
             }}
             draggable={false}
             onClick={onImageClick}
+            // không dùng fill để giữ tính toán transform/pan hiện tại
+            sizes="(max-width: 1024px) 90vw, 90vw"
+            priority
           />
         </div>
       </div>
