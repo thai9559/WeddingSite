@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 
 type RelationKey =
   | "bride_friend"
@@ -41,9 +42,17 @@ export default function RSVPForm() {
 
   const onChange =
     (k: keyof Form) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (
+      e: React.ChangeEvent<
+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      >
+    ) => {
       const v = e.currentTarget.value;
-      setForm((s) => ({ ...s, [k]: k === "guests_count" ? Number(v) : v }));
+      setForm((s) => ({
+        ...s,
+        [k]:
+          k === "guests_count" ? Number(v) : (v as unknown as Form[typeof k]),
+      }));
     };
 
   const canSubmit = useMemo(() => {
@@ -82,17 +91,9 @@ export default function RSVPForm() {
         setErr(json.error || "Gửi thất bại.");
       } else {
         setOk("Đăng ký thành công! Hẹn gặp bạn tại đám cưới 💖");
-        setForm({
-          name: "",
-          phone: "",
-          guests_count: 1,
-          relation_key: "bride_friend",
-          relation_note: "",
-          message: "",
-        });
+        // Không render form nữa — chỉ hiển thị trạng thái + nút quay về
       }
     } catch (err: unknown) {
-      // ← thay any bằng unknown
       const msg =
         err instanceof Error ? err.message : "Có lỗi mạng. Vui lòng thử lại.";
       setErr(msg);
@@ -127,130 +128,139 @@ export default function RSVPForm() {
           </div>
         )}
 
-        <form onSubmit={submit} className="px-6 pb-6 pt-5 space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Họ tên <span className="text-red-500">*</span>
-              </label>
-              <input
-                className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
-                value={form.name}
-                onChange={onChange("name")}
-                placeholder="Nguyễn Văn A"
-                required
-              />
-            </div>
+        {/* Nếu đã submit thành công: ẩn form, chỉ hiện nút quay về */}
+        {ok ? (
+          <div className="px-6 pb-6 pt-2">
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-2.5 bg-black text-white hover:opacity-90"
+            >
+              ⟵ Quay về trang chính
+            </Link>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="px-6 pb-6 pt-5 space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Họ tên <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
+                  value={form.name}
+                  onChange={onChange("name")}
+                  placeholder="Nguyễn Văn A"
+                  required
+                  disabled={submitting}
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Số điện thoại
-              </label>
-              <input
-                className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
-                value={form.phone}
-                onChange={onChange("phone")}
-                placeholder="Tuỳ chọn"
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Số điện thoại
+                </label>
+                <input
+                  className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
+                  value={form.phone}
+                  onChange={onChange("phone")}
+                  placeholder="Tuỳ chọn"
+                  disabled={submitting}
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Số khách <span className="text-red-500">*</span>
-              </label>
-              <input
-                className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
-                type="number"
-                min={1}
-                value={form.guests_count}
-                onChange={onChange("guests_count")}
-                required
-              />
-              <p className="text-xs text-neutral-500 mt-1">
-                Bao gồm cả bạn và người đi cùng (nếu có).
-              </p>
-            </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Số khách <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
+                  type="number"
+                  min={1}
+                  value={form.guests_count}
+                  onChange={onChange("guests_count")}
+                  required
+                  disabled={submitting}
+                />
+                <p className="text-xs text-neutral-500 mt-1">
+                  Bao gồm cả bạn và người đi cùng (nếu có).
+                </p>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Bạn là ai?
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {RELATION_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() =>
-                      setForm((s) => ({ ...s, relation_key: opt.key }))
-                    }
-                    className={[
-                      "px-3 py-2 rounded-xl border text-sm",
-                      form.relation_key === opt.key
-                        ? "border-black bg-black text-white"
-                        : "border-neutral-300 hover:border-neutral-400",
-                    ].join(" ")}
-                    aria-pressed={form.relation_key === opt.key}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Bạn là ai?
+                </label>
+                <select
+                  className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
+                  value={form.relation_key}
+                  onChange={onChange("relation_key")}
+                  disabled={submitting}
+                >
+                  {RELATION_OPTIONS.map((opt) => (
+                    <option key={opt.key} value={opt.key}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-          </div>
 
-          {form.relation_key === "other" && (
+            {form.relation_key === "other" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Ghi rõ “Khác” <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
+                  value={form.relation_note}
+                  onChange={onChange("relation_note")}
+                  placeholder="Ví dụ: bạn thân từ cấp 3, hàng xóm…"
+                  required
+                  disabled={submitting}
+                />
+              </div>
+            )}
+
             <div>
-              <label className="block text-sm font-medium mb-1">
-                Ghi rõ “Khác” <span className="text-red-500">*</span>
-              </label>
-              <input
+              <label className="block text-sm font-medium mb-1">Lời nhắn</label>
+              <textarea
                 className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
-                value={form.relation_note}
-                onChange={onChange("relation_note")}
-                placeholder="Ví dụ: bạn thân từ cấp 3, hàng xóm…"
-                required
+                rows={4}
+                value={form.message}
+                onChange={onChange("message")}
+                placeholder="Ví dụ: ăn chay, dị ứng, dự kiến giờ đến..."
+                maxLength={500}
+                disabled={submitting}
               />
+              <div className="text-right text-xs text-neutral-400 mt-1">
+                {form.message?.length || 0}/500
+              </div>
             </div>
-          )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Lời nhắn</label>
-            <textarea
-              className="w-full border border-neutral-300 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-black/10 focus:border-black/30"
-              rows={4}
-              value={form.message}
-              onChange={onChange("message")}
-              placeholder="Ví dụ: ăn chay, dị ứng, dự kiến giờ đến..."
-              maxLength={500}
-            />
-            <div className="text-right text-xs text-neutral-400 mt-1">
-              {form.message?.length || 0}/500
+            <div>
+              <button
+                disabled={submitting || !canSubmit}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-2.5 bg-black text-white hover:opacity-90 disabled:opacity-60"
+              >
+                {submitting ? (
+                  <>
+                    <span className="inline-flex h-4 w-4 items-center justify-center">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                    </span>
+                    Đang gửi...
+                  </>
+                ) : (
+                  "Gửi đăng ký"
+                )}
+              </button>
             </div>
-          </div>
 
-          <div>
-            <button
-              disabled={submitting || !canSubmit}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-2.5 bg-black text-white hover:opacity-90 disabled:opacity-60"
-            >
-              {submitting ? (
-                <>
-                  <span className="inline-flex h-4 w-4 items-center justify-center">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
-                  </span>
-                  Đang gửi...
-                </>
-              ) : (
-                "Gửi đăng ký"
-              )}
-            </button>
-          </div>
-
-          <p className="text-[11px] leading-relaxed text-neutral-500">
-            Chúng mình chỉ dùng thông tin để tổ chức sự kiện; không chia sẻ ra
-            ngoài.
-          </p>
-        </form>
+            <p className="text-[11px] leading-relaxed text-neutral-500">
+              Chúng mình chỉ dùng thông tin để tổ chức sự kiện; không chia sẻ ra
+              ngoài.
+            </p>
+          </form>
+        )}
       </div>
     </div>
   );
