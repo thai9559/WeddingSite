@@ -4,7 +4,6 @@ import AdminRSVPTable from "./table";
 
 type SearchParams = { event?: string };
 
-// Kiểu đúng với DB (có thể null)
 type DBRow = {
   id: number;
   event_key: string;
@@ -17,7 +16,6 @@ type DBRow = {
   created_at: string;
 };
 
-// Kiểu cho bảng (không null)
 export type TableRow = Omit<DBRow, "guests_count"> & {
   guests_count: number;
 };
@@ -53,7 +51,6 @@ function groupCounts(rows: TableRow[]) {
   };
 }
 
-// ⚠️ Giữ generateMetadata (động), KHÔNG export metadata cố định
 export async function generateMetadata(props: {
   searchParams?: Promise<SearchParams>;
 }) {
@@ -63,7 +60,6 @@ export async function generateMetadata(props: {
 }
 
 export default async function AdminRSVPPage(props: {
-  // Khớp checker tự sinh của Next: Promise<any>
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await props.searchParams) ?? {};
@@ -87,10 +83,8 @@ export default async function AdminRSVPPage(props: {
     );
   }
 
-  // 1) rows từ DB (có thể null)
   const dbRows = (data ?? []) as DBRow[];
 
-  // 2) Chuẩn hoá sang TableRow (guests_count luôn là number)
   const tableRows: TableRow[] = dbRows.map((r) => ({
     ...r,
     guests_count: r.guests_count ?? 0,
@@ -110,7 +104,6 @@ export default async function AdminRSVPPage(props: {
           </p>
         </div>
 
-        {/* Lọc theo event_key bằng query param */}
         <form className="flex items-center gap-2" action="/admin/rsvps">
           <input
             name="event"
@@ -127,7 +120,6 @@ export default async function AdminRSVPPage(props: {
         </form>
       </div>
 
-      {/* Summary by relation */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         {byRelationEntries.map(([k, v]) => (
           <div key={k} className="rounded-xl border px-3 py-3">
@@ -146,7 +138,6 @@ export default async function AdminRSVPPage(props: {
         )}
       </div>
 
-      {/* Bảng chi tiết */}
       <AdminRSVPTable rows={tableRows} />
     </main>
   );

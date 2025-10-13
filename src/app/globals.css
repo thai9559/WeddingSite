@@ -1,8 +1,5 @@
 @import "tailwindcss";
 
-@layer utilities {
-  .animate-in {}
-}
 
 @custom-variant dark (&:is(.dark *));
 
