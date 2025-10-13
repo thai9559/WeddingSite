@@ -1,92 +1,172 @@
 // components/Hero.tsx
 "use client";
-import { useRef, useState } from "react";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import { ForestSlider, ForestSliderHandle, ForestSlide } from "./ForestSlider";
 
-const heroSlides: ForestSlide[] = [
-  {
-    src: "/images/main-banner.jpg",
-    heading: "Our Wedding Day",
-    subheading: "A celebration of love",
-  },
-  {
-    src: "/images/main-banner_1.jpg",
-    heading: "Our Wedding Day",
-    subheading: "A celebration of love",
-  },
-  {
-    src: "/images/main-banner_2.jpg",
-    heading: "Captured Moments",
-    subheading: "Memories to cherish",
-  },
-  {
-    src: "/images/main-banner_3.jpg",
-    heading: "Together Forever",
-    subheading: "Join our story",
-  },
-  {
-    src: "/images/main-banner_4.jpg",
-    heading: "Happily Ever After",
-    subheading: "The journey continues",
-  },
-  {
-    src: "/images/main-banner_5.jpg",
-    heading: "Happily Ever After",
-    subheading: "The journey continues",
-  },
-  {
-    src: "/images/main-banner_6.jpg",
-    heading: "Happily Ever After",
-    subheading: "The journey continues",
-  },
-  {
-    src: "/images/main-banner_7.jpg",
-    heading: "Happily Ever After",
-    subheading: "The journey continues",
-  },
-  {
-    src: "/images/main-banner_8.jpg",
-    heading: "Happily Ever After",
-    subheading: "The journey continues",
-  },
-  {
-    src: "/images/main-banner_9.jpg",
-    heading: "Happily Ever After",
-    subheading: "The journey continues",
-  },
-];
+type Device = "pc" | "mobile";
 
+const BUCKET = "wedding";
+const IS_PRIVATE_BUCKET = false; // true nếu bucket Private
+const PREFIX = (dv: Device) => `banners/hero/${dv}`;
+
+const MAX_SLIDES = 12;
+const IMG_EXT = /\.(jpe?g|png|webp|gif|avif)$/i;
+
+// --- helpers ---
+function sb() {
+  return supabaseBrowser; // instance
+}
+function getPublicUrl(path: string) {
+  return sb().storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+}
+async function getUrl(path: string) {
+  if (!IS_PRIVATE_BUCKET) return getPublicUrl(path);
+  const { data, error } = await sb()
+    .storage.from(BUCKET)
+    .createSignedUrl(path, 600);
+  if (error || !data?.signedUrl)
+    throw error ?? new Error("Không tạo signed URL");
+  return data.signedUrl;
+}
+async function listFiles(prefix: string): Promise<string[]> {
+  const { data, error } = await sb()
+    .storage.from(BUCKET)
+    .list(prefix, { limit: 500, sortBy: { column: "name", order: "asc" } });
+  if (error) throw error;
+
+  return (data ?? [])
+    .filter((f: any) => !!f?.id && !!f?.name) // chỉ file, bỏ folder
+    .map((f: any) => `${prefix}/${f.name}`)
+    .filter((p) => IMG_EXT.test(p)) // chỉ đuôi ảnh
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .slice(0, MAX_SLIDES);
+}
+
+// --- component ---
 export function Hero() {
+  const [device, setDevice] = useState<Device>("mobile"); // sẽ auto sync theo breakpoint
+  const [slides, setSlides] = useState<ForestSlide[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>("");
   const [index, setIndex] = useState(0);
   const sliderRef = useRef<ForestSliderHandle>(null);
 
+  // Cache theo device
+  const cacheRef = useRef<Record<Device, ForestSlide[]>>({
+    pc: [],
+    mobile: [],
+  });
+
+  // 🔸 Auto-chọn theo breakpoint md (768px)
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 768px)");
+    const apply = () => setDevice(mql.matches ? "pc" : "mobile");
+    apply(); // set ngay khi mount
+    mql.addEventListener?.("change", apply);
+    return () => mql.removeEventListener?.("change", apply);
+  }, []);
+
+  const loadSlides = useCallback(async (dv: Device) => {
+    setLoading(true);
+    setErr("");
+
+    let alive = true;
+    const guard = () => alive;
+
+    try {
+      // dùng cache nếu có
+      if (cacheRef.current[dv]?.length) {
+        if (!guard()) return;
+        setSlides(cacheRef.current[dv]);
+        setIndex(0);
+        sliderRef.current?.jumpTo(0);
+        return;
+      }
+
+      const paths = await listFiles(PREFIX(dv));
+      if (!guard()) return;
+
+      if (!paths.length) {
+        setSlides([]);
+        throw new Error("Không tìm thấy file ảnh hợp lệ trong thư mục.");
+      }
+
+      const results = await Promise.allSettled(paths.map((p) => getUrl(p)));
+      if (!guard()) return;
+
+      const urls = results
+        .filter(
+          (r): r is PromiseFulfilledResult<string> => r.status === "fulfilled"
+        )
+        .map((r) => r.value);
+
+      if (!urls.length) {
+        setSlides([]);
+        throw new Error("Không thể tạo URL ảnh (có thể private/policy).");
+      }
+
+      const mapped: ForestSlide[] = urls.map((src, i) => ({
+        src,
+        heading: i === 0 ? "Our Wedding Day" : "Happily Ever After",
+        subheading: i === 0 ? "A celebration of love" : "The journey continues",
+      }));
+
+      cacheRef.current[dv] = mapped;
+      setSlides(mapped);
+      setIndex(0);
+      sliderRef.current?.jumpTo(0);
+    } catch (e: any) {
+      if (!guard()) return;
+      setErr(e?.message || "Không tải được ảnh banner.");
+    } finally {
+      if (guard()) setLoading(false);
+    }
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    loadSlides(device);
+  }, [device, loadSlides]);
+
+  const hasSlides = useMemo(() => slides.length > 0, [slides]);
+
   return (
     <section className="relative h-[100svh] w-full overflow-hidden bg-black">
-      <ForestSlider
-        ref={sliderRef}
-        slides={heroSlides}
-        intervalMs={5000}
-        intensity={0.6}
-        autoplay={false}
-        onChange={setIndex}
-      />
+      {hasSlides ? (
+        <ForestSlider
+          ref={sliderRef}
+          slides={slides}
+          intervalMs={5000}
+          intensity={0.6}
+          autoplay={true}
+          onChange={setIndex}
+        />
+      ) : (
+        <div className="absolute inset-0 grid place-items-center text-white/70">
+          {loading ? "Đang tải ảnh…" : err || "Chưa có ảnh banner"}
+        </div>
+      )}
 
-      {/* Header overlay (không chặn click) */}
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between px-6 py-5 text-white mix-blend-difference"></header>
-
-      {/* Dots ở ĐÁY – click để nhảy slide qua ref */}
-      <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2 flex gap-2">
-        {heroSlides.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => sliderRef.current?.jumpTo(i)}
-            className={`h-1.5 w-6 rounded-full transition ${
-              i === index ? "bg-white" : "bg-white/40 hover:bg-white/60"
-            }`}
-            aria-label={`Go to slide ${i + 1}`}
-          />
-        ))}
-      </div>
+      {/* Dots */}
+      {hasSlides && (
+        <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2 flex gap-2">
+          {slides.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => sliderRef.current?.jumpTo(i)}
+              className={`h-1.5 w-6 rounded-full transition ${
+                i === index ? "bg-white" : "bg-white/40 hover:bg-white/60"
+              }`}
+              aria-label={`Go to slide ${i + 1}`}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

@@ -1,8 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    // cách đơn giản nhất
-    domains: ['oovnjewbubiuyspsghwy.supabase.co'],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "oovnjewbubiuyspsghwy.supabase.co", // <-- domain project của bạn
+        pathname: "/storage/v1/object/**",
+      },
+    ],
   },
 };
 

@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Images, ImageUp, LogOut } from "lucide-react";
+import {
+  LayoutDashboard,
+  Images,
+  ImageUp,
+  LogOut,
+  VideoIcon,
+} from "lucide-react";
 
 import {
   Sidebar,
@@ -21,6 +27,7 @@ const items = [
   { title: "Upload Albums", url: "/admin/albums", icon: Images },
   { title: "Upload Banner", url: "/admin/banner", icon: ImageUp },
   { title: "Guest", url: "/admin/rsvps", icon: ImageUp },
+  { title: "Video", url: "/admin/videos", icon: VideoIcon },
 ];
 
 export function AppSidebar() {
@@ -37,7 +44,6 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton
                     asChild
-                    // shadcn sidebar hỗ trợ prop isActive để tô sáng item
                     isActive={
                       pathname === item.url ||
                       pathname.startsWith(item.url + "/")
@@ -51,7 +57,6 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               ))}
 
-              {/* Logout (tuỳ bạn xử lý route / logic) */}
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
                   <Link href="/logout">
