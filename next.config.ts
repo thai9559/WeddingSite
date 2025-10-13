@@ -1,7 +1,9 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  images: {
+    // cách đơn giản nhất
+    domains: ['oovnjewbubiuyspsghwy.supabase.co'],
+  },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
