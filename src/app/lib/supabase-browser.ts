@@ -1,12 +1,10 @@
+// src/app/lib/supabase-browser.ts
 "use client";
+
 import { createPagesBrowserClient } from "@supabase/auth-helpers-nextjs";
-// (tùy) import type { Database } from "@/types/supabase";
+// import type { Database } from "@/types/supabase";
 
-let _client: ReturnType<typeof createPagesBrowserClient> | null = null;
-// Nếu có Database types: ReturnType<typeof createPagesBrowserClient<Database>>
+// Nếu có types Database, mở comment dòng dưới:
+// export const supabaseBrowser = createPagesBrowserClient<Database>();
 
-export function supabaseBrowser() {
-    if (_client) return _client;
-    _client = createPagesBrowserClient(); // hoặc <Database>()
-    return _client;
-}
+export const supabaseBrowser = createPagesBrowserClient();
