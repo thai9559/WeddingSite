@@ -26,6 +26,21 @@ function relationLabel(key: string) {
   return RELATION_LABELS[key] ?? "Khác";
 }
 
+function formatVNTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString("vi-VN", {
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
   const [q, setQ] = useState("");
 
@@ -43,26 +58,98 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
     });
   }, [rows, q]);
 
+  const csvHref = `/api/rsvps/export?event=${encodeURIComponent(
+    rows[0]?.event_key || ""
+  )}`;
+
   return (
     <div className="rounded-2xl border overflow-hidden bg-white">
-      <div className="p-4 flex items-center justify-between gap-3 border-b">
+      {/* Toolbar */}
+      <div className="p-4 flex flex-col gap-3 border-b md:flex-row md:items-center md:justify-between">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Tìm theo tên, số điện thoại, quan hệ, ghi chú…"
-          className="w-full border rounded-xl px-3 py-2 text-sm"
+          className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
         />
-        <a
-          href={`/api/rsvps/export?event=${encodeURIComponent(
-            rows[0]?.event_key || ""
-          )}`}
-          className="ml-3 px-3 py-2 rounded-xl bg-black text-white text-sm whitespace-nowrap"
-        >
-          Tải CSV
-        </a>
+        <div className="flex justify-end">
+          <a
+            href={csvHref}
+            className="px-3 py-2 rounded-xl bg-black text-white text-sm whitespace-nowrap"
+          >
+            Tải CSV
+          </a>
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Mobile list (< md) */}
+      <div className="md:hidden">
+        {filtered.length === 0 ? (
+          <div className="p-6 text-center text-neutral-500">
+            Không có kết quả phù hợp.
+          </div>
+        ) : (
+          <ul className="divide-y">
+            {filtered.map((r, i) => (
+              <li key={r.id} className="p-4 space-y-3">
+                {/* Top row: STT left – relation badge right */}
+                <div className="flex items-start justify-between">
+                  <div className="text-sm text-neutral-500">#{i + 1}</div>
+                  <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs">
+                    {relationLabel(r.relation_key)}
+                    <span className="opacity-60">•</span>
+                    <b>{r.guests_count}</b> khách
+                  </div>
+                </div>
+
+                {/* Row: Tên – SĐT – Thời gian (3 cột ngang) */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs text-neutral-500">Tên</div>
+                    <div className="font-medium text-sm break-words">
+                      {r.name || "(Chưa có tên)"}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs text-neutral-500">
+                      Số điện thoại
+                    </div>
+                    {r.phone ? (
+                      <a
+                        href={`tel:${r.phone}`}
+                        className="text-sm text-blue-600 hover:underline break-words"
+                      >
+                        {r.phone}
+                      </a>
+                    ) : (
+                      <div className="text-sm text-neutral-500">—</div>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-neutral-500">Thời gian</div>
+                    <div className="text-xs text-neutral-600">
+                      {formatVNTime(r.created_at)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column: Lời nhắn (dọc) */}
+                {r.message && (
+                  <div>
+                    <div className="text-xs text-neutral-500">Lời nhắn</div>
+                    <div className="text-sm text-neutral-700 whitespace-pre-line">
+                      {r.message}
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Desktop table (md+) */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-700">
             <tr>
@@ -78,21 +165,29 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
           <tbody>
             {filtered.map((r, i) => (
               <tr key={r.id} className="border-t">
-                {/* STT tự tăng 1 → n theo danh sách đang hiển thị */}
                 <td className="px-4 py-3">{i + 1}</td>
                 <td className="px-4 py-3">{r.name}</td>
-                <td className="px-4 py-3">{r.phone}</td>
+                <td className="px-4 py-3">
+                  {r.phone ? (
+                    <a
+                      href={`tel:${r.phone}`}
+                      className="hover:underline text-blue-600"
+                    >
+                      {r.phone}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className="px-4 py-3">{relationLabel(r.relation_key)}</td>
                 <td className="px-4 py-3">{r.guests_count}</td>
                 <td
-                  className="px-4 py-3 max-w-[320px] truncate"
+                  className="px-4 py-3 max-w-[360px] truncate"
                   title={r.message || ""}
                 >
                   {r.message}
                 </td>
-                <td className="px-4 py-3">
-                  {new Date(r.created_at).toLocaleString("vi-VN")}
-                </td>
+                <td className="px-4 py-3">{formatVNTime(r.created_at)}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
