@@ -1,18 +1,29 @@
+// src/app/admin/_components/LogoutButton.tsx
 "use client";
-import { supabaseBrowser } from "@/app/lib/supabase-browser";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/app/lib/supabase-browser";
 
 export function LogoutButton() {
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
   return (
     <button
       onClick={async () => {
-        await supabaseBrowser.auth.signOut();
-        router.push("/login");
+        try {
+          setLoading(true);
+          const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+          await supabase.auth.signOut();
+          router.push("/login");
+        } finally {
+          setLoading(false);
+        }
       }}
       className="rounded border px-3 py-1"
+      disabled={loading}
     >
-      Đăng xuất
+      {loading ? "Đang đăng xuất..." : "Đăng xuất"}
     </button>
   );
 }
