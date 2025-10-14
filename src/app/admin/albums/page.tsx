@@ -5,6 +5,7 @@ import { uploadAlbumAction } from "./actions";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import { AdminAlbumImages } from "@/components/AdminAlbumImages";
 import { toast } from "sonner";
+import { fileToWebp } from "@/app/lib/img-webp";
 
 type Album = { id: number; key: string; title: string };
 type AlbumImage = {
@@ -14,7 +15,6 @@ type AlbumImage = {
   sort?: number | null;
 };
 
-// ✅ Đồng bộ với server action: bucket "wedding" + path "albums/<albumKey>/..."
 const BUCKET = "wedding";
 
 /** Lấy storage path tương đối (relative vào bucket), đồng bộ với server. */
@@ -25,6 +25,31 @@ function extractStoragePathFromUrl(publicUrl: string): string | null {
   const tail = publicUrl.slice(idx + marker.length).split("?")[0];
   return decodeURIComponent(tail.replace(/^\//, ""));
 }
+
+/* -------------------- WebP presets -------------------- */
+/** Preset đề xuất cho ảnh album (chi tiết tốt, dung lượng hợp lý). */
+function getAlbumPreset() {
+  return {
+    maxWidth: 2048,
+    maxHeight: 2048,
+    targetBytes: 600_000, // ~600KB
+    quality: 0.82,
+    minQuality: 0.6,
+  };
+}
+
+/** Preset cho ảnh cover (thường cần sắc nét, nhưng vẫn tối ưu). */
+function getCoverPreset() {
+  return {
+    maxWidth: 1600,
+    maxHeight: 1600,
+    targetBytes: 450_000, // ~450KB
+    quality: 0.84,
+    minQuality: 0.6,
+  };
+}
+
+/* -------------------- Component -------------------- */
 
 export default function AdminUploadPage() {
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -116,7 +141,6 @@ export default function AdminUploadPage() {
       setErrorImages("");
       return;
     }
-    // ✅ thêm reloadImages vào deps theo lint
     reloadImages(selectedAlbumId);
   }, [selectedAlbumId, result, reloadImages]);
 
@@ -147,11 +171,70 @@ export default function AdminUploadPage() {
     }
   }
 
+  /* -------------------- Handlers: nén & set file -------------------- */
+
+  // Nén ảnh cover về WebP theo preset cover
+  const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) {
+      setCover(null);
+      return;
+    }
+    try {
+      const MAX_INPUT_BYTES = 20 * 1024 * 1024; // 20MB safety
+      if (f.size > MAX_INPUT_BYTES) {
+        toast.info("Ảnh cover quá lớn (>20MB) đã bị bỏ qua.");
+        setCover(null);
+        return;
+      }
+      const webp = await fileToWebp(f, getCoverPreset());
+      setCover(webp);
+      toast.success("Đã nén cover sang WebP");
+    } catch (err: any) {
+      toast.error("Không nén được ảnh cover", {
+        description: err?.message || String(err),
+      });
+      setCover(null);
+    }
+  };
+
+  // Nén nhiều ảnh album về WebP theo preset album
+  const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputFiles = Array.from(e.target.files ?? []);
+    if (!inputFiles.length) {
+      setFiles([]);
+      return;
+    }
+
+    const MAX_INPUT_BYTES = 20 * 1024 * 1024; // 20MB safety
+    const filtered = inputFiles.filter((f) => f.size <= MAX_INPUT_BYTES);
+    if (filtered.length < inputFiles.length) {
+      toast.info("Một số file > 20MB đã bị bỏ qua để đảm bảo hiệu năng.");
+    }
+
+    const processed: File[] = [];
+    for (const f of filtered) {
+      try {
+        const webp = await fileToWebp(f, getAlbumPreset());
+        processed.push(webp);
+      } catch (err: any) {
+        toast.error(`Không nén được ảnh: ${f.name}`, {
+          description: err?.message || String(err),
+        });
+      }
+    }
+    setFiles(processed);
+    if (processed.length) {
+      toast.success(`Đã nén ${processed.length} ảnh sang WebP`);
+    }
+  };
+
   return (
     <main className="mx-auto max-w-5xl p-6">
       <h1 className="text-2xl font-semibold">Admin · Upload ảnh vào album</h1>
       <p className="mt-1 text-sm text-neutral-500">
-        Chọn album, chọn ảnh (và cover nếu có), rồi upload.
+        Chọn album, chọn ảnh (và cover nếu có), ảnh sẽ được nén về WebP trước
+        khi upload.
       </p>
 
       <form
@@ -178,6 +261,7 @@ export default function AdminUploadPage() {
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             setResult("❌ ERROR: " + msg);
+            toast.error("Upload thất bại", { description: msg });
           } finally {
             setBusy(false);
           }
@@ -215,9 +299,15 @@ export default function AdminUploadPage() {
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => setCover(e.target.files?.[0] ?? null)}
+              onChange={handleCoverChange}
               className="mt-1 w-full rounded border p-2"
             />
+            {cover && (
+              <p className="mt-2 text-xs text-neutral-500">
+                Cover đã nén: <b>{cover.name}</b> ·{" "}
+                {(cover.size / 1024).toFixed(0)} KB
+              </p>
+            )}
           </div>
           <div>
             <label className="text-xs font-medium">Ảnh album</label>
@@ -225,11 +315,13 @@ export default function AdminUploadPage() {
               type="file"
               accept="image/*"
               multiple
-              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+              onChange={handleFilesChange}
               className="mt-1 w-full rounded border p-2"
             />
             <div className="mt-2 text-xs text-neutral-500">
-              {files.length ? `${files.length} ảnh đã chọn` : "Chưa chọn ảnh"}
+              {files.length
+                ? `${files.length} ảnh đã chọn (đã nén WebP trước khi upload)`
+                : "Chưa chọn ảnh"}
             </div>
           </div>
         </div>
