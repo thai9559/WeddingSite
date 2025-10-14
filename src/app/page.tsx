@@ -4,7 +4,7 @@ import { Hero } from "./components/Hero";
 import { Approach } from "./components/Approach";
 import Albums from "./components/Cards";
 import { SiteFooter } from "./components/SiteFooter";
-import WeddingGallery from "./components/WeddingGallery";
+// import WeddingGallery from "./components/WeddingGallery";
 import { makeWeddingData } from "./lib/wedding.mapper";
 import { weddingInput } from "./data/wedding.data";
 import Link from "next/link";
@@ -16,7 +16,7 @@ export default function Home() {
     <main className="bg-white text-neutral-800">
       <Header />
       <Hero />
-      <WeddingGallery data={data} />
+      {/* <WeddingGallery data={data} /> */}
       <div className="text-center my-16 relative">
         <p className="text-sm md:text-base text-neutral-500 mb-3">
           Chúng mình rất mong được đón tiếp bạn trong ngày trọng đại này ✨
