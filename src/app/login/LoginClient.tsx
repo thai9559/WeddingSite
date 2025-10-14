@@ -34,6 +34,7 @@ export default function LoginClient() {
       }
     } catch (err) {
       toast.error("Lỗi hệ thống. Vui lòng thử lại ⚠️");
+      console.log(err);
     } finally {
       setLoading(false);
     }

@@ -65,7 +65,7 @@ function groupCounts(rows: TableRow[]) {
 }
 
 export default function RSVPView({ eventKey, rows }: Props) {
-  const [q, setQ] = useState(""); // nếu bạn không cần search, có thể bỏ state này
+  const [q, setQ] = useState("");
   const [relation, setRelation] = useState<string>("all");
 
   const filtered = useMemo(() => {

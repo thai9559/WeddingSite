@@ -37,8 +37,8 @@ async function listFiles(prefix: string): Promise<string[]> {
   if (error) throw error;
 
   return (data ?? [])
-    .filter((f: any) => !!f?.id && !!f?.name) // chỉ file, bỏ folder
-    .map((f: any) => `${prefix}/${f.name}`)
+    .filter((f) => typeof f?.name === "string" && !!f?.id) // chỉ file, bỏ folder
+    .map((f) => `${prefix}/${f.name}`)
     .filter((p) => IMG_EXT.test(p)) // chỉ đuôi ảnh
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
     .slice(0, MAX_SLIDES);
@@ -117,9 +117,9 @@ export function Hero() {
       setSlides(mapped);
       setIndex(0);
       sliderRef.current?.jumpTo(0);
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (!guard()) return;
-      setErr(e?.message || "Không tải được ảnh banner.");
+      setErr(e instanceof Error ? e.message : "Không tải được ảnh banner.");
     } finally {
       if (guard()) setLoading(false);
     }

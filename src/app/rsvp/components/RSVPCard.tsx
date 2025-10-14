@@ -1,5 +1,4 @@
 import RSVPForm from "@/app/rsvp/rsvp-form";
-import { IconMail } from "./Icons";
 
 export default function RSVPCard() {
   return (

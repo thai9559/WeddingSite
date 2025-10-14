@@ -2,13 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Images,
-  ImageUp,
-  LogOut,
-  VideoIcon,
-} from "lucide-react";
+import { LayoutDashboard, Images, ImageUp, VideoIcon } from "lucide-react";
 import LogoutButton from "./LogoutButton";
 import {
   Sidebar,

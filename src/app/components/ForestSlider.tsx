@@ -162,7 +162,11 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
       if (s == null) return;
       const dx = x - s;
       if (Math.abs(dx) > 70) {
-        dx < 0 ? next() : prev();
+        if (dx < 0) {
+          next();
+        } else {
+          prev();
+        }
         startX.current = null;
       }
     };

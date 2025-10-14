@@ -174,6 +174,7 @@ export default function AdminUploadPage() {
   /* -------------------- Handlers: nén & set file -------------------- */
 
   // Nén ảnh cover về WebP theo preset cover
+  // Nén ảnh cover về WebP theo preset cover
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) {
@@ -190,10 +191,9 @@ export default function AdminUploadPage() {
       const webp = await fileToWebp(f, getCoverPreset());
       setCover(webp);
       toast.success("Đã nén cover sang WebP");
-    } catch (err: any) {
-      toast.error("Không nén được ảnh cover", {
-        description: err?.message || String(err),
-      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("Không nén được ảnh cover", { description: msg });
       setCover(null);
     }
   };
@@ -217,10 +217,9 @@ export default function AdminUploadPage() {
       try {
         const webp = await fileToWebp(f, getAlbumPreset());
         processed.push(webp);
-      } catch (err: any) {
-        toast.error(`Không nén được ảnh: ${f.name}`, {
-          description: err?.message || String(err),
-        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`Không nén được ảnh: ${f.name}`, { description: msg });
       }
     }
     setFiles(processed);
