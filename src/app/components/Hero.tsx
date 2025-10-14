@@ -15,9 +15,7 @@ const MAX_SLIDES = 12;
 const IMG_EXT = /\.(jpe?g|png|webp|gif|avif)$/i;
 
 // --- helpers ---
-function sb() {
-  return supabaseBrowser; // instance
-}
+
 function getPublicUrl(path: string): string {
   const { data } = supabaseBrowser().storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;

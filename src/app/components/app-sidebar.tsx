@@ -21,7 +21,6 @@ const items = [
   { title: "Upload Albums", url: "/admin/albums", icon: Images },
   { title: "Upload Banner", url: "/admin/banner", icon: ImageUp },
   { title: "Guest", url: "/admin/rsvps", icon: ImageUp },
-  // { title: "Video", url: "/admin/videos", icon: VideoIcon },
 ];
 
 export function AppSidebar() {
