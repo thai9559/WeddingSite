@@ -1,5 +1,6 @@
-// app/(admin)/banners/page.tsx
 "use client";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { useCallback, useEffect, useState } from "react";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
@@ -43,13 +44,13 @@ function getPresetByDevice(device: Device) {
 }
 
 async function getPublicUrl(path: string): Promise<string> {
-  const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+  const supabase = supabaseBrowser(); // ✅ client chỉ gọi ở browser
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
 
 async function getUrlFromPath(path: string): Promise<string> {
-  const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+  const supabase = supabaseBrowser();
   if (!IS_PRIVATE_BUCKET) return getPublicUrl(path);
 
   const { data, error } = await supabase.storage
@@ -91,7 +92,7 @@ type UploadResult = {
 /* -------------------- Component -------------------- */
 
 export default function AdminUploadBannerPage() {
-  const selectedLocation = "hero"; // cố định, tránh no-unused-vars cho setter
+  const selectedLocation = "hero"; // cố định
   const [device, setDevice] = useState<Device>("pc");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -106,8 +107,8 @@ export default function AdminUploadBannerPage() {
     async (location: string, dvInput: Device | string) => {
       setLoadingImages(true);
       try {
-        const supabase = supabaseBrowser(); // ✅ lấy client
-        const dv = asDevice(String(dvInput)); // ✅ normalize về string cho chắc
+        const supabase = supabaseBrowser();
+        const dv = asDevice(String(dvInput));
 
         const { data, error } = await supabase
           .from("banner_images")
@@ -167,7 +168,7 @@ export default function AdminUploadBannerPage() {
   async function handleDeleteOne(img: BannerImage) {
     setDeletingId(img.id);
     try {
-      const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+      const supabase = supabaseBrowser();
 
       // Xóa file khỏi Supabase Storage
       const { error: storageError } = await supabase.storage
@@ -237,8 +238,9 @@ export default function AdminUploadBannerPage() {
             if (!selectedLocation)
               throw new Error("Bạn chưa chọn vị trí banner.");
 
-            formData.append("location", selectedLocation);
-            formData.append("device", device);
+            // ⚠️ Không append trùng: đã có name="location" & name="device" trong form
+            // formData.append("location", selectedLocation);
+            // formData.append("device", device);
             files.forEach((f) => formData.append("files", f));
 
             const res = (await uploadBannerAction(formData)) as
@@ -282,7 +284,6 @@ export default function AdminUploadBannerPage() {
           }
         }}
       >
-        {/* Chọn vị trí */}
         {/* Vị trí cố định: hero */}
         <div>
           <label className="text-xs font-medium">Vị trí (location)</label>
@@ -291,7 +292,7 @@ export default function AdminUploadBannerPage() {
             name="location"
             value="hero"
             readOnly
-            className="mt-1 w-full outline-none rounded border disabled p-2 bg-neutral-50 text-neutral-600"
+            className="mt-1 w-full outline-none rounded border p-2 bg-neutral-50 text-neutral-600"
           />
         </div>
 
@@ -346,7 +347,7 @@ export default function AdminUploadBannerPage() {
       <section className="mt-10">
         <h2 className="text-lg font-semibold">Ảnh đã upload</h2>
         {loadingImages ? (
-          <p className="text-sm text-nezutral-500">Đang tải ảnh…</p>
+          <p className="text-sm text-neutral-500">Đang tải ảnh…</p>
         ) : (
           <AdminBannerImages
             images={bannerImages}

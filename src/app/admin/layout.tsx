@@ -1,8 +1,15 @@
+// app/(admin)/layout.tsx
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+// (tùy chọn) cấm cache hoàn toàn ở server
+export const fetchCache = "default-no-store";
+
 import { redirect } from "next/navigation";
 import { supabaseServer } from "../lib/supabase-server";
 import { Toaster } from "sonner";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/app/components/app-sidebar";
+
 export const metadata = {
   title: "Admin",
   description: "Trang quản lý ảnh cưới",
@@ -13,17 +20,27 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // ✅ Chạy SSR theo request (không prerender)
   const supabase = await supabaseServer();
+
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
   if (!session) redirect("/login");
 
-  const email = session.user.email?.toLowerCase();
-  const allowed = process.env.ADMIN_EMAIL?.toLowerCase();
-  if (!allowed) throw new Error("Missing ADMIN_EMAIL");
-  if (email !== allowed) redirect("/login");
+  const email = session.user.email?.toLowerCase() || "";
+  const allowed = process.env.ADMIN_EMAIL?.toLowerCase() || "";
+
+  // ✅ ADMIN_EMAIL phải được set trong môi trường server (Vercel env)
+  if (!allowed) {
+    // Nên throw để lộ rõ config lỗi trên server (không lộ cho client)
+    throw new Error("Missing ADMIN_EMAIL env");
+  }
+
+  if (email !== allowed) {
+    redirect("/login");
+  }
 
   return (
     <SidebarProvider>
@@ -40,6 +57,7 @@ export default async function AdminLayout({
 
         <main className="container mx-auto w-full max-w-[1400px] flex-1 p-4 lg:p-6">
           {children}
+          {/* Toaster là client component, an toàn khi render trong server layout */}
           <Toaster position="top-center" richColors />
         </main>
       </div>
