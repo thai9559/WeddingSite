@@ -1,41 +1,36 @@
+// app/(admin)/banners/page.tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
-import { uploadBannerAction } from "../banner/action";
+import { uploadBannerAction } from "./action";
 import { toast } from "sonner";
 import { AdminBannerImages } from "@/app/components/AdminBannerImages";
 import type { BannerImage } from "@/app/components/AdminBannerImages";
 
-export type BannerLocation = {
-  id: number;
-  key: string;
-  name: string;
-};
-
+export type BannerLocation = { id: number; key: string; name: string };
 type Device = "pc" | "mobile";
 
 const BUCKET = "wedding";
+const IS_PRIVATE_BUCKET = false;
 
-// Nếu bucket PUBLIC:
 function getPublicUrl(path: string) {
   return supabaseBrowser.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
 }
-
-// Nếu bucket PRIVATE, bật flag này và dùng createSignedUrl thay cho getPublicUrl
-const IS_PRIVATE_BUCKET = false; // <-- đổi true nếu bucket Private
-
-async function getUrlFromPath(path: string): Promise<string> {
-  if (!IS_PRIVATE_BUCKET) {
-    return getPublicUrl(path);
-  }
+async function getUrlFromPath(path: string) {
+  if (!IS_PRIVATE_BUCKET) return getPublicUrl(path);
   const { data, error } = await supabaseBrowser.storage
     .from(BUCKET)
-    .createSignedUrl(path, 60 * 10); // 10 phút
-  if (error || !data?.signedUrl) {
+    .createSignedUrl(path, 60 * 10);
+  if (error || !data?.signedUrl)
     throw error ?? new Error("Không tạo được signed URL");
-  }
   return data.signedUrl;
+}
+
+// fallback nếu DB cũ lưu full URL thay vì path
+function extractPathFromUrl(u: string) {
+  const m = u?.match(/\/object\/(public|sign)\/wedding\/(.+)$/);
+  return m?.[2] || "";
 }
 
 export default function AdminUploadBannerPage() {
@@ -45,31 +40,24 @@ export default function AdminUploadBannerPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string>("");
-  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const [bannerImages, setBannerImages] = useState<BannerImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // load vị trí
   useEffect(() => {
     (async () => {
       const { data, error } = await supabaseBrowser
         .from("banner_locations")
         .select("id, key, name")
         .order("id", { ascending: true });
-
       if (!error) setLocations((data as BannerLocation[]) || []);
-      else console.error("Lỗi khi load banner_locations:", error.message);
+      else console.error("Lỗi load banner_locations:", error.message);
     })();
   }, []);
 
-  // thêm helper fallback nếu DB cũ chưa có `path`
-  function extractPathFromUrl(u: string) {
-    // hỗ trợ cả public/sign
-    const m = u?.match(/\/object\/(public|sign)\/wedding\/(.+)$/);
-    return m?.[2] || "";
-  }
-
-  // 🔄 Lấy ảnh banner (chấp nhận dv là Device hoặc string để tương thích dữ liệu cũ)
+  // load list ảnh theo location + device
   const fetchBannerImages = useCallback(
     async (location: string, dv: Device | string) => {
       setLoadingImages(true);
@@ -80,27 +68,23 @@ export default function AdminUploadBannerPage() {
           .eq("location", location)
           .eq("device", dv)
           .order("id");
-
         if (error) throw error;
 
         const items = (data ?? []) as Array<{
           id: number;
           path: string | null;
-          url: string;
+          url: string | null;
           location: string;
           device: string;
         }>;
 
         const resolved = await Promise.all(
           items.map(async (row) => {
-            const path = row.path || extractPathFromUrl(row.url);
+            const path = row.path || extractPathFromUrl(row.url || "");
             if (!path) return null;
-
             const url = await getUrlFromPath(path);
-
-            // Thu hẹp kiểu device về union "pc" | "mobile" nếu hợp lệ, default "pc"
-            const dvNarrow: Device = row.device === "mobile" ? "mobile" : "pc";
-
+            const dvNarrow: Device =
+              row.device?.toLowerCase() === "mobile" ? "mobile" : "pc";
             const item: BannerImage = {
               id: row.id,
               path,
@@ -112,11 +96,11 @@ export default function AdminUploadBannerPage() {
           })
         );
 
-        const images = resolved.filter((x): x is BannerImage => x !== null);
-        setBannerImages(images);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error("Lỗi khi load ảnh", { description: msg });
+        setBannerImages(resolved.filter(Boolean) as BannerImage[]);
+      } catch (e: any) {
+        toast.error("Lỗi khi load ảnh", {
+          description: e?.message || String(e),
+        });
         setBannerImages([]);
       } finally {
         setLoadingImages(false);
@@ -126,42 +110,33 @@ export default function AdminUploadBannerPage() {
   );
 
   useEffect(() => {
-    if (selectedLocation && device) {
-      fetchBannerImages(selectedLocation, device);
-    } else {
-      setBannerImages([]);
-    }
+    if (selectedLocation && device) fetchBannerImages(selectedLocation, device);
+    else setBannerImages([]);
   }, [selectedLocation, device, result, fetchBannerImages]);
 
+  // xoá 1 ảnh (Storage + DB)
   async function handleDeleteOne(img: BannerImage) {
     setDeletingId(img.id);
     try {
-      // Xoá bằng path, không split từ url
       const { error: storageError } = await supabaseBrowser.storage
         .from(BUCKET)
         .remove([img.path]);
-
       if (storageError) throw storageError;
-
-      if (img.id && !Number.isNaN(Number(img.id))) {
-        await supabaseBrowser.from("banner_images").delete().eq("id", img.id);
-      }
-
-      toast.success("Đã xoá ảnh banner thành công");
+      await supabaseBrowser.from("banner_images").delete().eq("id", img.id);
+      toast.success("Đã xoá ảnh banner");
       await fetchBannerImages(img.location, img.device);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("Lỗi xoá ảnh", { description: msg });
+    } catch (e: any) {
+      toast.error("Lỗi xoá ảnh", { description: e?.message || String(e) });
     } finally {
       setDeletingId(null);
     }
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
+    <main className="mx-auto max-w-5xl p-6">
       <h1 className="text-2xl font-semibold">Admin · Upload ảnh banner</h1>
-      <p className="text-sm text-neutral-500 mt-1">
-        Chọn vị trí banner, thiết bị (pc/mobile) và ảnh rồi upload.
+      <p className="mt-1 text-sm text-neutral-500">
+        Chọn vị trí (location), thiết bị (pc/mobile), rồi upload.
       </p>
 
       <form
@@ -177,24 +152,45 @@ export default function AdminUploadBannerPage() {
             files.forEach((f) => formData.append("files", f));
 
             const res = await uploadBannerAction(formData);
-            setResult(`✅ Đã upload ${res.uploaded} ảnh banner.`);
-            setFiles([]);
 
+            // debug giống albums
+            console.group("[UploadBannerAction] Debug");
+            console.log("attemptPaths:", res?.attemptPaths);
+            console.log("detail:", res?.detail);
+            console.groupEnd();
+
+            if (res?.detail?.errors?.length) {
+              toast.error("Một số ảnh upload thất bại", {
+                description: res.detail.errors
+                  .map(
+                    (e: any) =>
+                      `${e.name}${e.path ? ` → ${e.path}` : ""}: ${e.message}`
+                  )
+                  .join("\n"),
+              });
+            }
+
+            setResult(`✅ Upload: ${res.uploaded}/${files.length}
+→ Thư mục: banners/${selectedLocation}/${device}
+→ Attempt: ${(res.attemptPaths || []).join(", ")}`);
+
+            setFiles([]);
             toast.success("Đã upload banner", {
-              description: `Tải lên ${res.uploaded} ảnh banner.`,
+              description: `Tải lên ${res.uploaded} ảnh.`,
             });
-          } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            setResult("❌ Lỗi: " + msg);
-            toast.error("Upload thất bại", { description: msg });
+          } catch (e: any) {
+            setResult("❌ Lỗi: " + (e?.message || String(e)));
+            toast.error("Upload thất bại", {
+              description: e?.message || String(e),
+            });
           } finally {
             setBusy(false);
           }
         }}
       >
-        {/* Vị trí */}
+        {/* Chọn vị trí */}
         <div>
-          <label className="text-xs font-medium">Vị trí banner</label>
+          <label className="text-xs font-medium">Vị trí (location)</label>
           <select
             name="location"
             value={selectedLocation}
@@ -213,7 +209,7 @@ export default function AdminUploadBannerPage() {
 
         {/* Thiết bị */}
         <div>
-          <label className="text-xs font-medium">Loại thiết bị</label>
+          <label className="text-xs font-medium">Thiết bị</label>
           <select
             name="device"
             value={device}
@@ -250,9 +246,9 @@ export default function AdminUploadBannerPage() {
         </button>
 
         {result && (
-          <div className="rounded border mt-3 p-3 text-sm whitespace-pre-wrap">
+          <pre className="rounded border mt-3 p-3 text-xs whitespace-pre-wrap">
             {result}
-          </div>
+          </pre>
         )}
       </form>
 

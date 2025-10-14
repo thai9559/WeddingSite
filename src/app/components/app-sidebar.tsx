@@ -9,7 +9,7 @@ import {
   LogOut,
   VideoIcon,
 } from "lucide-react";
-
+import LogoutButton from "./LogoutButton";
 import {
   Sidebar,
   SidebarContent,
@@ -59,10 +59,9 @@ export function AppSidebar() {
 
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <Link href="/logout">
-                    <LogOut className="h-4 w-4" />
-                    <span>Đăng xuất</span>
-                  </Link>
+                  <div>
+                    <LogoutButton />
+                  </div>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

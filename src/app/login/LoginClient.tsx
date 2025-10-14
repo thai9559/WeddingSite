@@ -15,7 +15,7 @@ export default function LoginClient() {
     e.preventDefault();
     setLoading(true);
     setMsg(null);
-    const supabase = supabaseBrowser();
+    const supabase = supabaseBrowser;
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password: pass,
@@ -29,7 +29,7 @@ export default function LoginClient() {
     e.preventDefault();
     setLoading(true);
     setMsg(null);
-    const supabase = supabaseBrowser();
+    const supabase = supabaseBrowser;
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${location.origin}/admin` },
@@ -42,7 +42,7 @@ export default function LoginClient() {
     e.preventDefault();
     setLoading(true);
     setMsg(null);
-    const supabase = supabaseBrowser();
+    const supabase = supabaseBrowser;
     const { error } = await supabase.auth.signUp({ email, password: pass });
     setLoading(false);
     setMsg(

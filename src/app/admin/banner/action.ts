@@ -1,51 +1,91 @@
-'use server';
+// app/(admin)/banners/action.ts
+"use server";
 
-import { createServerActionClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { cookies } from "next/headers";
+import { createServerActionClient } from "@supabase/auth-helpers-nextjs";
+// import type { Database } from "@/types/supabase";
+
+const BUCKET = "wedding";
 
 export async function uploadBannerAction(formData: FormData) {
-    const supabase = createServerActionClient({ cookies });
+    const supabase = createServerActionClient/*<Database>*/({ cookies });
+
+    // Bắt buộc đăng nhập (giống albums)
     const {
         data: { session },
+        error: sessionErr,
     } = await supabase.auth.getSession();
-
+    if (sessionErr) throw new Error(sessionErr.message);
     if (!session) throw new Error("Bạn cần đăng nhập.");
-
     const userId = session.user.id;
-    const location = formData.get("location") as string;
-    const device = formData.get("device") as string;
-    const files = formData.getAll("files") as File[];
 
+    // Lấy input
+    const location = String(formData.get("location") || "").trim(); // ví dụ: "hero"
+    const device = String(formData.get("device") || "").trim().toLowerCase(); // "pc" | "mobile"
+    const files = formData.getAll("files") as File[];
     if (!location) throw new Error("Thiếu vị trí banner.");
     if (!["pc", "mobile"].includes(device)) throw new Error("Thiết bị không hợp lệ.");
+    if (!files.length) throw new Error("Chưa chọn file.");
+
+    // (Optional) xác nhận location có tồn tại trong banner_locations
+    const { data: loc, error: locErr } = await supabase
+        .from("banner_locations")
+        .select("key")
+        .eq("key", location)
+        .maybeSingle();
+    if (locErr) throw locErr;
+    if (!loc?.key) throw new Error("Vị trí banner không hợp lệ.");
+
+    // Chuẩn prefix như albums (ổn định với Hero)
+    const base = `banners/${location}/${device}`;
 
     const uploaded: string[] = [];
+    const errors: { name: string; message: string }[] = [];
+    const attemptPaths: string[] = [];
 
     for (const file of files) {
-        const filename = `${Date.now()}-${file.name}`;
-        const path = `banners/${location}/${device}/${filename}`;
+        const safeName = `${Date.now()}-${file.name}`.replace(/\s+/g, "_");
+        const path = `${base}/${safeName}`;
+        attemptPaths.push(path);
 
+        // Giữ giống albums: upsert: true
         const { data, error } = await supabase.storage
-            .from("wedding")
-            .upload(path, file, { upsert: true });
+            .from(BUCKET)
+            .upload(path, file, {
+                upsert: true,
+                cacheControl: "3600",
+                contentType: file.type || "image/jpeg",
+            });
 
-        if (error || !data?.path) continue;
+        if (error || !data?.path) {
+            errors.push({ name: file.name, message: error?.message || "Upload lỗi" });
+            continue;
+        }
 
-        const fullPath = data.path;
+        // Public URL (bucket public)
+        const publicUrl = supabase.storage.from(BUCKET).getPublicUrl(data.path).data.publicUrl;
 
-        // Nếu muốn có url public khi bucket Public:
-        const publicUrl = supabase.storage.from("wedding").getPublicUrl(fullPath).data.publicUrl;
-
-        await supabase.from("banner_images").insert({
-            path: fullPath,       // <-- quan trọng
-            // url: publicUrl,    // <-- tuỳ bạn: có thể lưu hoặc bỏ
+        // Insert DB để Admin list
+        const { error: dbErr } = await supabase.from("banner_images").insert({
+            path: data.path,     // ví dụ: banners/hero/pc/xxxx.jpg
+            // url: publicUrl,    // có thể lưu hoặc bỏ, Hero có thể build từ path
             device,
             location,
             owner_id: userId,
         });
+        if (dbErr) {
+            errors.push({ name: file.name, message: dbErr.message });
+            // có thể rollback storage nếu muốn
+            continue;
+        }
 
         uploaded.push(publicUrl);
     }
 
-    return { uploaded: uploaded.length };
+    return {
+        ok: errors.length === 0,
+        uploaded: uploaded.length,
+        attemptPaths,
+        detail: { uploaded, errors, location, device, bucket: BUCKET, base },
+    };
 }
