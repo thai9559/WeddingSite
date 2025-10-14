@@ -2,95 +2,83 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import toast, { Toaster } from "react-hot-toast";
 import { supabaseBrowser } from "../lib/supabase-browser";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export default function LoginClient() {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   const router = useRouter();
 
   async function signInWithPassword(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    setMsg(null);
-    const supabase = supabaseBrowser;
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password: pass,
-    });
-    setLoading(false);
-    if (error) return setMsg(error.message);
-    router.push("/admin"); // hoặc window.location.href="/admin"
-  }
 
-  async function signInWithMagicLink(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setMsg(null);
-    const supabase = supabaseBrowser;
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${location.origin}/admin` },
-    });
-    setLoading(false);
-    setMsg(error ? error.message : "Đã gửi link đăng nhập. Kiểm tra email!");
-  }
+    try {
+      const supabase = supabaseBrowser;
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: pass,
+      });
 
-  async function signUp(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setMsg(null);
-    const supabase = supabaseBrowser;
-    const { error } = await supabase.auth.signUp({ email, password: pass });
-    setLoading(false);
-    setMsg(
-      error ? error.message : "Tạo tài khoản thành công. Bạn có thể đăng nhập."
-    );
+      if (error) {
+        toast.error("Sai tài khoản hoặc mật khẩu ❌");
+        console.log(error.message);
+      } else {
+        toast.success("Đăng nhập thành công 🎉");
+        setTimeout(() => router.push("/admin"), 1200);
+      }
+    } catch (err) {
+      toast.error("Lỗi hệ thống. Vui lòng thử lại ⚠️");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <main className="mx-auto max-w-sm p-6">
-      <h1 className="text-xl font-semibold">Đăng nhập</h1>
-      <form className="mt-5 space-y-3" onSubmit={signInWithPassword}>
-        <input
-          className="w-full rounded border p-2"
-          placeholder="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded border p-2"
-          placeholder="Mật khẩu"
-          type="password"
-          value={pass}
-          onChange={(e) => setPass(e.target.value)}
-        />
-        <button
-          disabled={loading}
-          className="w-full rounded bg-black py-2 text-white"
-        >
-          {loading ? "Đang xử lý..." : "Đăng nhập"}
-        </button>
-        <button
-          onClick={signUp}
-          type="button"
-          className="w-full rounded border py-2"
-        >
-          Đăng ký (email + password)
-        </button>
-        <button
-          onClick={signInWithMagicLink}
-          type="button"
-          className="w-full rounded border py-2"
-        >
-          Gửi magic link
-        </button>
-        {msg && <p className="text-sm text-red-600">{msg}</p>}
-      </form>
+    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 via-white to-sky-100 relative">
+      {/* Toaster dùng global luôn */}
+      <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
+
+      <Card className="w-full max-w-sm shadow-xl border border-neutral-200 backdrop-blur-sm bg-white/80">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-semibold text-neutral-800">
+            Đăng nhập
+          </CardTitle>
+          <p className="text-sm text-neutral-500 mt-1">
+            Chào mừng bạn quay lại 🎉
+          </p>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={signInWithPassword}>
+            <Input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="focus-visible:ring-indigo-100"
+            />
+            <Input
+              type="password"
+              placeholder="Mật khẩu"
+              value={pass}
+              onChange={(e) => setPass(e.target.value)}
+              className="focus-visible:ring-indigo-100"
+            />
+            <Button
+              disabled={loading}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white transition"
+            >
+              {loading ? "Đang xử lý..." : "Đăng nhập"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </main>
   );
 }

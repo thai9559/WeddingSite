@@ -13,7 +13,7 @@
 # testing
 /coverage
 
-# next.js
+# next.jsý 
 /.next/
 /out/
 
@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# lock file
+package-lock.json
+
