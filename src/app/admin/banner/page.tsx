@@ -7,6 +7,7 @@ import { uploadBannerAction } from "./action";
 import { toast } from "sonner";
 import { AdminBannerImages } from "@/app/components/AdminBannerImages";
 import type { BannerImage } from "@/app/components/AdminBannerImages";
+import { fileToWebp } from "@/app/lib/img-webp";
 
 export type BannerLocation = { id: number; key: string; name: string };
 type Device = "pc" | "mobile";
@@ -14,9 +15,32 @@ type Device = "pc" | "mobile";
 const BUCKET = "wedding";
 const IS_PRIVATE_BUCKET = false;
 
+/* -------------------- Helper -------------------- */
+
+// preset theo device
+function getPresetByDevice(device: Device) {
+  if (device === "mobile") {
+    return {
+      maxWidth: 1280,
+      maxHeight: 1280,
+      targetBytes: 450_000, // ~450KB
+      quality: 0.82,
+      minQuality: 0.6,
+    };
+  }
+  return {
+    maxWidth: 2560,
+    maxHeight: 1440,
+    targetBytes: 700_000, // ~700KB
+    quality: 0.85,
+    minQuality: 0.6,
+  };
+}
+
 function getPublicUrl(path: string) {
   return supabaseBrowser.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
 }
+
 async function getUrlFromPath(path: string) {
   if (!IS_PRIVATE_BUCKET) return getPublicUrl(path);
   const { data, error } = await supabaseBrowser.storage
@@ -33,9 +57,10 @@ function extractPathFromUrl(u: string) {
   return m?.[2] || "";
 }
 
+/* -------------------- Component -------------------- */
+
 export default function AdminUploadBannerPage() {
-  const [locations, setLocations] = useState<BannerLocation[]>([]);
-  const [selectedLocation, setSelectedLocation] = useState<string>("");
+  const [selectedLocation, setSelectedLocation] = useState<string>("hero");
   const [device, setDevice] = useState<Device>("pc");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -44,18 +69,6 @@ export default function AdminUploadBannerPage() {
   const [bannerImages, setBannerImages] = useState<BannerImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  // load vị trí
-  useEffect(() => {
-    (async () => {
-      const { data, error } = await supabaseBrowser
-        .from("banner_locations")
-        .select("id, key, name")
-        .order("id", { ascending: true });
-      if (!error) setLocations((data as BannerLocation[]) || []);
-      else console.error("Lỗi load banner_locations:", error.message);
-    })();
-  }, []);
 
   // load list ảnh theo location + device
   const fetchBannerImages = useCallback(
@@ -132,6 +145,37 @@ export default function AdminUploadBannerPage() {
     }
   }
 
+  // khi chọn file: nén/resize sang WebP
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputFiles = Array.from(e.target.files ?? []);
+    if (!inputFiles.length) {
+      setFiles([]);
+      return;
+    }
+
+    const MAX_INPUT_BYTES = 15 * 1024 * 1024; // 15MB
+    const filtered = inputFiles.filter((f) => f.size <= MAX_INPUT_BYTES);
+    if (filtered.length < inputFiles.length) {
+      toast.info("Một số file > 15MB đã bị bỏ qua để đảm bảo hiệu năng.");
+    }
+
+    const preset = getPresetByDevice(device);
+    const processed: File[] = [];
+
+    for (const f of filtered) {
+      try {
+        const webp = await fileToWebp(f, preset);
+        processed.push(webp);
+      } catch (err: any) {
+        toast.error(`Không nén được ảnh: ${f.name}`, {
+          description: err?.message || String(err),
+        });
+      }
+    }
+
+    setFiles(processed);
+  };
+
   return (
     <main className="mx-auto max-w-5xl p-6">
       <h1 className="text-2xl font-semibold">Admin · Upload ảnh banner</h1>
@@ -153,7 +197,6 @@ export default function AdminUploadBannerPage() {
 
             const res = await uploadBannerAction(formData);
 
-            // debug giống albums
             console.group("[UploadBannerAction] Debug");
             console.log("attemptPaths:", res?.attemptPaths);
             console.log("detail:", res?.detail);
@@ -189,22 +232,16 @@ export default function AdminUploadBannerPage() {
         }}
       >
         {/* Chọn vị trí */}
+        {/* Vị trí cố định: hero */}
         <div>
           <label className="text-xs font-medium">Vị trí (location)</label>
-          <select
+          <input
+            type="text"
             name="location"
-            value={selectedLocation}
-            onChange={(e) => setSelectedLocation(e.target.value)}
-            className="mt-1 w-full rounded border p-2"
-            required
-          >
-            <option value="">-- Chọn vị trí banner --</option>
-            {locations.map((loc) => (
-              <option key={loc.id} value={loc.key}>
-                {loc.name} ({loc.key})
-              </option>
-            ))}
-          </select>
+            value="hero"
+            readOnly
+            className="mt-1 w-full outline-none rounded border disabled p-2 bg-neutral-50 text-neutral-600"
+          />
         </div>
 
         {/* Thiết bị */}
@@ -229,12 +266,14 @@ export default function AdminUploadBannerPage() {
             type="file"
             accept="image/*"
             multiple
-            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+            onChange={handleFileChange}
             className="mt-1 w-full rounded border p-2"
             required
           />
           <div className="mt-2 text-xs text-neutral-500">
-            {files.length ? `${files.length} ảnh đã chọn` : "Chưa chọn ảnh"}
+            {files.length
+              ? `${files.length} ảnh đã chọn (đã nén sang WebP trước khi upload)`
+              : "Chưa chọn ảnh"}
           </div>
         </div>
 

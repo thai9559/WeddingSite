@@ -10,7 +10,6 @@ const BUCKET = "wedding";
 export async function uploadBannerAction(formData: FormData) {
     const supabase = createServerActionClient/*<Database>*/({ cookies });
 
-    // Bắt buộc đăng nhập (giống albums)
     const {
         data: { session },
         error: sessionErr,
@@ -19,9 +18,8 @@ export async function uploadBannerAction(formData: FormData) {
     if (!session) throw new Error("Bạn cần đăng nhập.");
     const userId = session.user.id;
 
-    // Lấy input
-    const location = String(formData.get("location") || "").trim(); // ví dụ: "hero"
-    const device = String(formData.get("device") || "").trim().toLowerCase(); // "pc" | "mobile"
+    const location = String(formData.get("location") || "").trim();
+    const device = String(formData.get("device") || "").trim().toLowerCase();
     const files = formData.getAll("files") as File[];
     if (!location) throw new Error("Thiếu vị trí banner.");
     if (!["pc", "mobile"].includes(device)) throw new Error("Thiết bị không hợp lệ.");
@@ -40,42 +38,63 @@ export async function uploadBannerAction(formData: FormData) {
     const base = `banners/${location}/${device}`;
 
     const uploaded: string[] = [];
-    const errors: { name: string; message: string }[] = [];
+    const errors: { name: string; message: string; path?: string }[] = [];
     const attemptPaths: string[] = [];
 
     for (const file of files) {
-        const safeName = `${Date.now()}-${file.name}`.replace(/\s+/g, "_");
+        const origName = file.name || "unnamed";
+        const isWebp = file.type === "image/webp" || /\.webp$/i.test(origName);
+
+        // Lấy extension hợp lệ
+        const ext = isWebp
+            ? "webp"
+            : (origName.split(".").pop() || "").toLowerCase() || "jpg";
+
+        // Base name an toàn
+        const baseName = origName.replace(/\.[^.]+$/, "");
+        const safeBase = baseName.replace(/[^\w.-]+/g, "_");
+        const ts = Date.now();
+        const safeName = `${ts}-${safeBase}.${ext}`;
+
         const path = `${base}/${safeName}`;
         attemptPaths.push(path);
 
-        // Giữ giống albums: upsert: true
+        // contentType ưu tiên từ file.type, fallback theo ext
+        const contentType =
+            isWebp
+                ? "image/webp"
+                : file.type || (ext === "png" ? "image/png" : "image/jpeg");
+
         const { data, error } = await supabase.storage
             .from(BUCKET)
             .upload(path, file, {
                 upsert: true,
                 cacheControl: "3600",
-                contentType: file.type || "image/jpeg",
+                contentType,
             });
 
         if (error || !data?.path) {
-            errors.push({ name: file.name, message: error?.message || "Upload lỗi" });
+            errors.push({
+                name: origName,
+                message: error?.message || "Upload lỗi",
+                path,
+            });
             continue;
         }
 
-        // Public URL (bucket public)
         const publicUrl = supabase.storage.from(BUCKET).getPublicUrl(data.path).data.publicUrl;
 
         // Insert DB để Admin list
         const { error: dbErr } = await supabase.from("banner_images").insert({
-            path: data.path,     // ví dụ: banners/hero/pc/xxxx.jpg
+            path: data.path,     // ví dụ: banners/hero/pc/xxxx.webp
             // url: publicUrl,    // có thể lưu hoặc bỏ, Hero có thể build từ path
             device,
             location,
             owner_id: userId,
         });
         if (dbErr) {
-            errors.push({ name: file.name, message: dbErr.message });
-            // có thể rollback storage nếu muốn
+            errors.push({ name: origName, message: dbErr.message, path: data.path });
+            // (tuỳ chọn) rollback storage nếu muốn
             continue;
         }
 
