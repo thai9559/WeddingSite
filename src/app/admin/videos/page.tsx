@@ -1,45 +1,50 @@
+// src/app/admin/videos/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
+
+type Category = "pre_wedding" | "wedding";
 
 type Video = {
   id: string;
   title: string;
   video_url: string;
   thumbnail_url: string | null;
-  category: "pre_wedding" | "wedding";
+  category: Category;
 };
 
-const BUCKET = "wedding"; // ✅ bucket thực tế
-const categoryToFolder = (c: "pre_wedding" | "wedding") =>
+const BUCKET = "wedding";
+const categoryToFolder = (c: Category) =>
   c === "pre_wedding" ? "prewedding" : "wedding";
 
 export default function AdminVideosPage() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [category, setCategory] = useState<"pre_wedding" | "wedding">(
-    "pre_wedding"
-  );
+  const [category, setCategory] = useState<Category>("pre_wedding");
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [thumbFile, setThumbFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
 
   const fetchVideos = async () => {
-    const supabase = supabaseBrowser; // nếu bạn dùng dạng function thì đổi thành supabaseBrowser()
-    const { data, error } = await supabase
+    const { data, error } = await supabaseBrowser
       .from("videos")
       .select("*")
       .order("created_at", { ascending: false });
-    if (error) console.error(error);
-    else setVideos(data || []);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setVideos((data as Video[]) ?? []);
   };
 
   useEffect(() => {
     fetchVideos();
   }, []);
 
-  async function handleUpload(e: React.FormEvent) {
+  async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!videoFile || !thumbFile || !title.trim()) {
       alert("Vui lòng chọn đầy đủ thông tin (video, thumbnail, tiêu đề).");
@@ -48,43 +53,40 @@ export default function AdminVideosPage() {
 
     try {
       setUploading(true);
-      const supabase = supabaseBrowser; // nếu là function: supabaseBrowser()
 
-      // paths trong bucket "wedding"
       const folder = categoryToFolder(category);
-      const videoPath = `videos/${folder}/${Date.now()}-${videoFile.name}`;
-      const thumbPath = `videos/thumbnails/${folder}-${Date.now()}-${
-        thumbFile.name
-      }`;
+      const now = Date.now();
+      const videoPath = `videos/${folder}/${now}-${videoFile.name}`;
+      const thumbPath = `videos/thumbnails/${folder}-${now}-${thumbFile.name}`;
 
       // Upload video
-      const { error: videoErr } = await supabase.storage
+      const { error: videoErr } = await supabaseBrowser.storage
         .from(BUCKET)
         .upload(videoPath, videoFile, { upsert: true });
       if (videoErr) throw videoErr;
 
-      const { data: videoPub } = supabase.storage
+      const { data: videoPub } = supabaseBrowser.storage
         .from(BUCKET)
         .getPublicUrl(videoPath);
       const videoUrl = videoPub.publicUrl;
 
       // Upload thumbnail
-      const { error: thumbErr } = await supabase.storage
+      const { error: thumbErr } = await supabaseBrowser.storage
         .from(BUCKET)
         .upload(thumbPath, thumbFile, { upsert: true });
       if (thumbErr) throw thumbErr;
 
-      const { data: thumbPub } = supabase.storage
+      const { data: thumbPub } = supabaseBrowser.storage
         .from(BUCKET)
         .getPublicUrl(thumbPath);
       const thumbUrl = thumbPub.publicUrl;
 
       // Insert DB
-      const { error: insertErr } = await supabase.from("videos").insert({
+      const { error: insertErr } = await supabaseBrowser.from("videos").insert({
         title: title.trim(),
         video_url: videoUrl,
         thumbnail_url: thumbUrl,
-        category, // lưu đúng giá trị 'pre_wedding' | 'wedding'
+        category,
       });
       if (insertErr) throw insertErr;
 
@@ -93,9 +95,10 @@ export default function AdminVideosPage() {
       setThumbFile(null);
       setTitle("");
       alert("✅ Upload thành công!");
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Không xác định";
       console.error(err);
-      alert("❌ Lỗi upload: " + (err?.message || "Không xác định"));
+      alert("❌ Lỗi upload: " + msg);
     } finally {
       setUploading(false);
     }
@@ -131,9 +134,7 @@ export default function AdminVideosPage() {
             <label className="block text-sm mb-1">Phân loại</label>
             <select
               value={category}
-              onChange={(e) =>
-                setCategory(e.target.value as "pre_wedding" | "wedding")
-              }
+              onChange={(e) => setCategory(e.target.value as Category)}
               className="w-full rounded-md border p-2"
             >
               <option value="pre_wedding">💍 Pre-Wedding</option>
@@ -146,7 +147,7 @@ export default function AdminVideosPage() {
             <input
               type="file"
               accept="video/*"
-              onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+              onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
               className="w-full border rounded-md p-2"
             />
           </div>
@@ -156,7 +157,7 @@ export default function AdminVideosPage() {
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => setThumbFile(e.target.files?.[0] || null)}
+              onChange={(e) => setThumbFile(e.target.files?.[0] ?? null)}
               className="w-full border rounded-md p-2"
             />
           </div>
@@ -185,29 +186,34 @@ function VideoList({ title, videos }: { title: string; videos: Video[] }) {
     <div>
       <h2 className="text-xl font-medium mb-3 text-neutral-700">{title}</h2>
       <div className="space-y-3">
-        {videos.map((v) => (
-          <div
-            key={v.id}
-            className="flex items-center gap-3 rounded-lg border p-3 hover:bg-neutral-50"
-          >
-            <img
-              src={v.thumbnail_url || "/placeholder.jpg"}
-              alt={v.title}
-              className="w-24 h-16 object-cover rounded"
-            />
-            <div>
-              <div className="font-medium">{v.title}</div>
-              <a
-                href={v.video_url}
-                className="text-sm text-blue-600"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Xem video
-              </a>
+        {videos.map((v) => {
+          const src = v.thumbnail_url ?? "/placeholder.jpg";
+          return (
+            <div
+              key={v.id}
+              className="flex items-center gap-3 rounded-lg border p-3 hover:bg-neutral-50"
+            >
+              <Image
+                src={src}
+                alt={v.title}
+                width={96} // ~ w-24
+                height={64} // ~ h-16
+                className="rounded object-cover"
+              />
+              <div>
+                <div className="font-medium">{v.title}</div>
+                <a
+                  href={v.video_url}
+                  className="text-sm text-blue-600"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Xem video
+                </a>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

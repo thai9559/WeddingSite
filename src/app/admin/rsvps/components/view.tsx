@@ -99,7 +99,7 @@ export default function RSVPView({ eventKey, rows }: Props) {
 
   return (
     <>
-      {/* Header + Filter (và Search nếu dùng) */}
+      {/* Header + Filter + Search */}
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-semibold">RSVPs — {eventKey}</h1>
@@ -114,8 +114,13 @@ export default function RSVPView({ eventKey, rows }: Props) {
           )}
         </div>
 
-        {/* Bạn có thể thêm ô search tại đây nếu muốn */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Tìm theo tên, SĐT, ghi chú..."
+            className="w-full sm:w-64 border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-300"
+          />
           <select
             value={relation}
             onChange={(e) => setRelation(e.target.value)}

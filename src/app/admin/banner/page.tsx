@@ -17,6 +17,11 @@ const IS_PRIVATE_BUCKET = false;
 
 /* -------------------- Helper -------------------- */
 
+// Chuẩn hoá string → Device
+function asDevice(v: string): Device {
+  return v === "mobile" ? "mobile" : "pc";
+}
+
 // preset theo device
 function getPresetByDevice(device: Device) {
   if (device === "mobile") {
@@ -57,10 +62,28 @@ function extractPathFromUrl(u: string) {
   return m?.[2] || "";
 }
 
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Đã xảy ra lỗi không xác định";
+  }
+}
+
+/* -------------------- Types cho kết quả upload -------------------- */
+type UploadDetailError = { name: string; path?: string; message: string };
+type UploadResult = {
+  uploaded: number;
+  attemptPaths?: string[];
+  detail?: { errors?: UploadDetailError[] };
+};
+
 /* -------------------- Component -------------------- */
 
 export default function AdminUploadBannerPage() {
-  const [selectedLocation, setSelectedLocation] = useState<string>("hero");
+  const selectedLocation = "hero"; // cố định, tránh no-unused-vars cho setter
   const [device, setDevice] = useState<Device>("pc");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -72,9 +95,11 @@ export default function AdminUploadBannerPage() {
 
   // load list ảnh theo location + device
   const fetchBannerImages = useCallback(
-    async (location: string, dv: Device | string) => {
+    async (location: string, dvInput: Device | string) => {
       setLoadingImages(true);
       try {
+        const dv = asDevice(typeof dvInput === "string" ? dvInput : dvInput);
+
         const { data, error } = await supabaseBrowser
           .from("banner_images")
           .select("id, path, url, location, device")
@@ -96,8 +121,7 @@ export default function AdminUploadBannerPage() {
             const path = row.path || extractPathFromUrl(row.url || "");
             if (!path) return null;
             const url = await getUrlFromPath(path);
-            const dvNarrow: Device =
-              row.device?.toLowerCase() === "mobile" ? "mobile" : "pc";
+            const dvNarrow = asDevice((row.device || "").toLowerCase());
             const item: BannerImage = {
               id: row.id,
               path,
@@ -109,10 +133,10 @@ export default function AdminUploadBannerPage() {
           })
         );
 
-        setBannerImages(resolved.filter(Boolean) as BannerImage[]);
-      } catch (e: any) {
+        setBannerImages(resolved.filter((x): x is BannerImage => Boolean(x)));
+      } catch (e: unknown) {
         toast.error("Lỗi khi load ảnh", {
-          description: e?.message || String(e),
+          description: errorMessage(e),
         });
         setBannerImages([]);
       } finally {
@@ -135,11 +159,17 @@ export default function AdminUploadBannerPage() {
         .from(BUCKET)
         .remove([img.path]);
       if (storageError) throw storageError;
-      await supabaseBrowser.from("banner_images").delete().eq("id", img.id);
+
+      const { error: dbError } = await supabaseBrowser
+        .from("banner_images")
+        .delete()
+        .eq("id", img.id);
+      if (dbError) throw dbError;
+
       toast.success("Đã xoá ảnh banner");
       await fetchBannerImages(img.location, img.device);
-    } catch (e: any) {
-      toast.error("Lỗi xoá ảnh", { description: e?.message || String(e) });
+    } catch (e: unknown) {
+      toast.error("Lỗi xoá ảnh", { description: errorMessage(e) });
     } finally {
       setDeletingId(null);
     }
@@ -166,9 +196,9 @@ export default function AdminUploadBannerPage() {
       try {
         const webp = await fileToWebp(f, preset);
         processed.push(webp);
-      } catch (err: any) {
+      } catch (err: unknown) {
         toast.error(`Không nén được ảnh: ${f.name}`, {
-          description: err?.message || String(err),
+          description: errorMessage(err),
         });
       }
     }
@@ -195,36 +225,41 @@ export default function AdminUploadBannerPage() {
             formData.append("device", device);
             files.forEach((f) => formData.append("files", f));
 
-            const res = await uploadBannerAction(formData);
+            const res = (await uploadBannerAction(formData)) as
+              | UploadResult
+              | undefined;
 
             console.group("[UploadBannerAction] Debug");
             console.log("attemptPaths:", res?.attemptPaths);
             console.log("detail:", res?.detail);
             console.groupEnd();
 
-            if (res?.detail?.errors?.length) {
+            const errs = res?.detail?.errors ?? [];
+            if (errs.length) {
               toast.error("Một số ảnh upload thất bại", {
-                description: res.detail.errors
+                description: errs
                   .map(
-                    (e: any) =>
+                    (e) =>
                       `${e.name}${e.path ? ` → ${e.path}` : ""}: ${e.message}`
                   )
                   .join("\n"),
               });
             }
 
-            setResult(`✅ Upload: ${res.uploaded}/${files.length}
+            const uploaded = res?.uploaded ?? 0;
+            setResult(`✅ Upload: ${uploaded}/${files.length}
 → Thư mục: banners/${selectedLocation}/${device}
-→ Attempt: ${(res.attemptPaths || []).join(", ")}`);
+→ Attempt: ${(res?.attemptPaths || []).join(", ")}`);
 
             setFiles([]);
             toast.success("Đã upload banner", {
-              description: `Tải lên ${res.uploaded} ảnh.`,
+              description: `Tải lên ${uploaded} ảnh.`,
             });
-          } catch (e: any) {
-            setResult("❌ Lỗi: " + (e?.message || String(e)));
+          } catch (e: unknown) {
+            const msg = errorMessage(e);
+            setResult("❌ Lỗi: " + msg);
             toast.error("Upload thất bại", {
-              description: e?.message || String(e),
+              description: msg,
             });
           } finally {
             setBusy(false);
@@ -250,7 +285,7 @@ export default function AdminUploadBannerPage() {
           <select
             name="device"
             value={device}
-            onChange={(e) => setDevice(e.target.value as Device)}
+            onChange={(e) => setDevice(asDevice(e.target.value))}
             className="mt-1 w-full rounded border p-2"
             required
           >

@@ -1,5 +1,6 @@
+// src/app/layout.tsx
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, EB_Garamond } from "next/font/google";
+import { Geist, Geist_Mono, Ms_Madi } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -10,6 +11,13 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const msMadi = Ms_Madi({
+  variable: "--font-ms-madi",
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -23,20 +31,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin=""
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Ms+Madi&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="font-sans bg-white text-neutral-900"> {children}</body>
+    <html
+      lang="vi"
+      className={`${geistSans.variable} ${geistMono.variable} ${msMadi.variable}`}
+    >
+      <body className="font-sans bg-white text-neutral-900">{children}</body>
     </html>
   );
 }

@@ -1,16 +1,18 @@
+// src/app/admin/rsvps/view.tsx  ⬅️ (giữ nguyên file Albums của bạn ở đường dẫn thực tế)
+// Nếu file của bạn là: src/app/components/Cards.tsx hay tương tự, hãy đặt đúng path.
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
-// Nếu bạn đã có LightBox, import vào; nếu chưa, phần modal grid vẫn hoạt động
 import LightBox from "./Lightbox";
 
 type Album = {
   id: number;
   key: string;
   title: string;
-  cover_url?: string | null; // nếu bạn có cột này
+  cover_url?: string | null;
 };
 
 type AlbumImage = {
@@ -42,16 +44,18 @@ export default function Albums() {
   useEffect(() => {
     (async () => {
       try {
-        // nếu bạn KHÔNG có cột cover_url, xoá nó khỏi select
-        const { data, error } = await supabaseBrowser
+        const client = supabaseBrowser;
+        const { data, error } = await client
           .from("albums")
           .select("id, key, title, cover_url")
           .order("id", { ascending: true });
 
         if (error) throw error;
         setAlbums((data as Album[]) ?? []);
-      } catch (e: any) {
-        setError(e?.message ?? "Không thể tải danh sách album.");
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : "Không thể tải danh sách album.";
+        setError(message);
       }
     })();
   }, []);
@@ -66,7 +70,8 @@ export default function Albums() {
     (async () => {
       try {
         setLoadingImages(true);
-        const { data, error } = await supabaseBrowser
+        const client = supabaseBrowser;
+        const { data, error } = await client
           .from("images")
           .select("id, url, caption, sort")
           .eq("album_id", openAlbum.id)
@@ -75,7 +80,8 @@ export default function Albums() {
 
         if (error) throw error;
         setImages((data as AlbumImage[]) ?? []);
-      } catch (e: any) {
+      } catch {
+        // Không dùng biến lỗi => tránh no-unused-vars
         setImages([]);
       } finally {
         setLoadingImages(false);
@@ -115,7 +121,6 @@ export default function Albums() {
             onClick={() => setOpenAlbum(a)}
           >
             <div className="relative aspect-[4/3] overflow-hidden rounded-xl">
-              {/* Hiển thị cover_url nếu có; nếu không, vẫn tạo block trống để đều layout */}
               {a.cover_url ? (
                 <Image
                   src={a.cover_url}
@@ -161,7 +166,7 @@ export default function Albums() {
           className="fixed inset-0 z-[100] grid place-items-center bg-black/80 p-4"
           role="dialog"
           aria-modal="true"
-          onClick={(e) => {
+          onClick={(e: React.MouseEvent<HTMLDivElement>) => {
             if (e.target === e.currentTarget) setOpenAlbum(null);
           }}
         >
