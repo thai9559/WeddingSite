@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { uploadAlbumAction } from "./actions";
@@ -188,7 +189,6 @@ export default function AdminUploadPage() {
 
   /* -------------------- Handlers: nén & set file -------------------- */
 
-  // Nén ảnh cover về WebP theo preset cover
   // Nén ảnh cover về WebP theo preset cover
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
