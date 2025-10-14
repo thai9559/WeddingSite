@@ -18,30 +18,48 @@ const IMG_EXT = /\.(jpe?g|png|webp|gif|avif)$/i;
 function sb() {
   return supabaseBrowser; // instance
 }
-function getPublicUrl(path: string) {
-  return sb().storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+function getPublicUrl(path: string): string {
+  const { data } = supabaseBrowser().storage.from(BUCKET).getPublicUrl(path);
+  return data.publicUrl;
 }
-async function getUrl(path: string) {
+
+async function getUrl(path: string): Promise<string> {
   if (!IS_PRIVATE_BUCKET) return getPublicUrl(path);
-  const { data, error } = await sb()
+
+  const { data, error } = await supabaseBrowser()
     .storage.from(BUCKET)
-    .createSignedUrl(path, 600);
-  if (error || !data?.signedUrl)
+    .createSignedUrl(path, 600); // 10 phút
+
+  if (error || !data?.signedUrl) {
     throw error ?? new Error("Không tạo signed URL");
+  }
+
   return data.signedUrl;
 }
+
 async function listFiles(prefix: string): Promise<string[]> {
-  const { data, error } = await sb()
+  const cleanPrefix = prefix.replace(/^\/+|\/+$/g, ""); // tránh lỗi "///"
+
+  const { data, error } = await supabaseBrowser()
     .storage.from(BUCKET)
-    .list(prefix, { limit: 500, sortBy: { column: "name", order: "asc" } });
+    .list(cleanPrefix, {
+      limit: 500,
+      sortBy: { column: "name", order: "asc" },
+    });
+
   if (error) throw error;
 
-  return (data ?? [])
-    .filter((f) => typeof f?.name === "string" && !!f?.id) // chỉ file, bỏ folder
-    .map((f) => `${prefix}/${f.name}`)
-    .filter((p) => IMG_EXT.test(p)) // chỉ đuôi ảnh
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-    .slice(0, MAX_SLIDES);
+  return (
+    (data ?? [])
+      // chỉ file (folder có id = null)
+      .filter(
+        (f) => typeof f?.name === "string" && (f as { id?: string | null }).id
+      )
+      .map((f) => `${cleanPrefix}/${f.name}`)
+      .filter((p) => IMG_EXT.test(p))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .slice(0, MAX_SLIDES)
+  );
 }
 
 // --- component ---

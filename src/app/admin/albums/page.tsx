@@ -75,21 +75,30 @@ export default function AdminUploadPage() {
   // 🔄 load danh sách album
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabaseBrowser
-        .from("albums")
-        .select("id, key, title")
-        .order("id", { ascending: true });
+      try {
+        const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+        const { data, error } = await supabase
+          .from("albums")
+          .select("id, key, title")
+          .order("id", { ascending: true });
 
-      if (!error) setAlbums((data as Album[]) || []);
-      else console.error("Lỗi load albums:", error.message);
+        if (error) throw error;
+        setAlbums((data as Album[]) ?? []);
+      } catch (err: unknown) {
+        console.error(
+          "Lỗi load albums:",
+          err instanceof Error ? err.message : err
+        );
+      }
     })();
   }, []);
 
-  /** Truy vấn ảnh an toàn: thử string -> nếu trống, thử number */
   const fetchImagesDual = useCallback(
     async (albumIdStr: string): Promise<AlbumImage[]> => {
-      // 1) string
-      const r1 = await supabaseBrowser
+      const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+
+      // 1️⃣ Thử với id kiểu string
+      const r1 = await supabase
         .from("images")
         .select("id, url, caption, sort")
         .eq("album_id", albumIdStr)
@@ -99,10 +108,10 @@ export default function AdminUploadPage() {
       if (r1.error) throw r1.error;
       if (r1.data?.length) return (r1.data as AlbumImage[]) ?? [];
 
-      // 2) number
+      // 2️⃣ Nếu không có → thử id kiểu number
       const albumIdNum = Number(albumIdStr);
       if (!Number.isNaN(albumIdNum)) {
-        const r2 = await supabaseBrowser
+        const r2 = await supabase
           .from("images")
           .select("id, url, caption, sort")
           .eq("album_id", albumIdNum)
@@ -112,6 +121,7 @@ export default function AdminUploadPage() {
         if (r2.error) throw r2.error;
         return (r2.data as AlbumImage[]) ?? [];
       }
+
       return [];
     },
     []
@@ -148,24 +158,29 @@ export default function AdminUploadPage() {
   async function handleDeleteOne(img: AlbumImage) {
     if (!selectedAlbum?.key) return;
     setDeletingId(img.id);
+
     try {
+      const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+
       const path = extractStoragePathFromUrl(img.url); // "albums/<key>/file.jpg"
       if (path) {
-        const { error: remErr } = await supabaseBrowser.storage
+        const { error: remErr } = await supabase.storage
           .from(BUCKET)
           .remove([path]);
         if (remErr) throw remErr;
       }
-      const { error: delErr } = await supabaseBrowser
+
+      const { error: delErr } = await supabase
         .from("images")
         .delete()
         .eq("id", img.id);
       if (delErr) throw delErr;
 
+      // Cập nhật state: xoá ảnh vừa xoá khỏi danh sách
       setImages((prev) => prev.filter((x) => x.id !== img.id));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert("Xoá ảnh lỗi: " + msg);
+      alert("❌ Xoá ảnh lỗi: " + msg);
     } finally {
       setDeletingId(null);
     }

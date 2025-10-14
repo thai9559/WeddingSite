@@ -42,17 +42,25 @@ function getPresetByDevice(device: Device) {
   };
 }
 
-function getPublicUrl(path: string) {
-  return supabaseBrowser.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+async function getPublicUrl(path: string): Promise<string> {
+  const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return data.publicUrl;
 }
 
-async function getUrlFromPath(path: string) {
+async function getUrlFromPath(path: string): Promise<string> {
+  const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
   if (!IS_PRIVATE_BUCKET) return getPublicUrl(path);
-  const { data, error } = await supabaseBrowser.storage
+
+  const { data, error } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(path, 60 * 10);
-  if (error || !data?.signedUrl)
+    .createSignedUrl(path, 60 * 10); // URL sống 10 phút
+
+  if (error || !data?.signedUrl) {
+    console.error("❌ Lỗi tạo signed URL:", error);
     throw error ?? new Error("Không tạo được signed URL");
+  }
+
   return data.signedUrl;
 }
 
@@ -98,30 +106,36 @@ export default function AdminUploadBannerPage() {
     async (location: string, dvInput: Device | string) => {
       setLoadingImages(true);
       try {
-        const dv = asDevice(typeof dvInput === "string" ? dvInput : dvInput);
+        const supabase = supabaseBrowser(); // ✅ lấy client
+        const dv = asDevice(String(dvInput)); // ✅ normalize về string cho chắc
 
-        const { data, error } = await supabaseBrowser
+        const { data, error } = await supabase
           .from("banner_images")
           .select("id, path, url, location, device")
           .eq("location", location)
           .eq("device", dv)
-          .order("id");
+          .order("id", { ascending: true });
+
         if (error) throw error;
 
-        const items = (data ?? []) as Array<{
+        type Row = {
           id: number;
           path: string | null;
           url: string | null;
           location: string;
-          device: string;
-        }>;
+          device: string | null;
+        };
+
+        const items = (data ?? []) as Row[];
 
         const resolved = await Promise.all(
           items.map(async (row) => {
-            const path = row.path || extractPathFromUrl(row.url || "");
+            const path = row.path ?? extractPathFromUrl(row.url ?? "");
             if (!path) return null;
+
             const url = await getUrlFromPath(path);
-            const dvNarrow = asDevice((row.device || "").toLowerCase());
+            const dvNarrow = asDevice(String(row.device ?? ""));
+
             const item: BannerImage = {
               id: row.id,
               path,
@@ -133,11 +147,9 @@ export default function AdminUploadBannerPage() {
           })
         );
 
-        setBannerImages(resolved.filter((x): x is BannerImage => Boolean(x)));
+        setBannerImages(resolved.filter((x): x is BannerImage => x !== null));
       } catch (e: unknown) {
-        toast.error("Lỗi khi load ảnh", {
-          description: errorMessage(e),
-        });
+        toast.error("Lỗi khi load ảnh", { description: errorMessage(e) });
         setBannerImages([]);
       } finally {
         setLoadingImages(false);
@@ -155,12 +167,16 @@ export default function AdminUploadBannerPage() {
   async function handleDeleteOne(img: BannerImage) {
     setDeletingId(img.id);
     try {
-      const { error: storageError } = await supabaseBrowser.storage
+      const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+
+      // Xóa file khỏi Supabase Storage
+      const { error: storageError } = await supabase.storage
         .from(BUCKET)
         .remove([img.path]);
       if (storageError) throw storageError;
 
-      const { error: dbError } = await supabaseBrowser
+      // Xóa bản ghi trong database
+      const { error: dbError } = await supabase
         .from("banner_images")
         .delete()
         .eq("id", img.id);
@@ -330,7 +346,7 @@ export default function AdminUploadBannerPage() {
       <section className="mt-10">
         <h2 className="text-lg font-semibold">Ảnh đã upload</h2>
         {loadingImages ? (
-          <p className="text-sm text-neutral-500">Đang tải ảnh…</p>
+          <p className="text-sm text-nezutral-500">Đang tải ảnh…</p>
         ) : (
           <AdminBannerImages
             images={bannerImages}

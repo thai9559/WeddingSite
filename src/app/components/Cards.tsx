@@ -42,36 +42,45 @@ export default function Albums() {
 
   // tải danh sách album
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
-        const client = supabaseBrowser;
-        const { data, error } = await client
+        const supabase = supabaseBrowser(); // ✅ lấy client
+        const { data, error } = await supabase
           .from("albums")
           .select("id, key, title, cover_url")
           .order("id", { ascending: true });
 
         if (error) throw error;
-        setAlbums((data as Album[]) ?? []);
+        if (!cancelled) setAlbums((data as Album[]) ?? []);
       } catch (err: unknown) {
         const message =
           err instanceof Error ? err.message : "Không thể tải danh sách album.";
-        setError(message);
+        if (!cancelled) setError(message);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // khi mở 1 album -> load ảnh album đó
+  // Khi mở 1 album -> load ảnh album đó
   useEffect(() => {
     if (!openAlbum) {
       setImages([]);
       setViewerIndex(null);
       return;
     }
+
+    let cancelled = false; // ✅ tránh set state sau unmount
+
     (async () => {
       try {
         setLoadingImages(true);
-        const client = supabaseBrowser;
-        const { data, error } = await client
+        const supabase = supabaseBrowser(); // ✅ lấy client
+        const { data, error } = await supabase
           .from("images")
           .select("id, url, caption, sort")
           .eq("album_id", openAlbum.id)
@@ -79,14 +88,17 @@ export default function Albums() {
           .order("id", { ascending: true });
 
         if (error) throw error;
-        setImages((data as AlbumImage[]) ?? []);
+        if (!cancelled) setImages((data as AlbumImage[]) ?? []);
       } catch {
-        // Không dùng biến lỗi => tránh no-unused-vars
-        setImages([]);
+        if (!cancelled) setImages([]);
       } finally {
-        setLoadingImages(false);
+        if (!cancelled) setLoadingImages(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [openAlbum]);
 
   const content = useMemo(() => {

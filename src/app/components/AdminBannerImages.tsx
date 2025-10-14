@@ -40,12 +40,20 @@ type Props = {
 const BUCKET = "wedding";
 
 // tạo signed URL khi public URL fail
-async function createSignedUrl(path: string, expires = 60 * 10) {
-  const { data, error } = await supabaseBrowser.storage
+async function createSignedUrl(
+  path: string,
+  expires = 60 * 10
+): Promise<string> {
+  const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+
+  const { data, error } = await supabase.storage
     .from(BUCKET)
     .createSignedUrl(path, expires);
-  if (error || !data?.signedUrl)
+
+  if (error || !data?.signedUrl) {
     throw error ?? new Error("Không tạo được signed URL");
+  }
+
   return data.signedUrl;
 }
 
