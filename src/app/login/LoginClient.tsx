@@ -19,7 +19,8 @@ export default function LoginClient() {
     setLoading(true);
 
     try {
-      const supabase = supabaseBrowser;
+      const supabase = supabaseBrowser();
+
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password: pass,
@@ -27,14 +28,14 @@ export default function LoginClient() {
 
       if (error) {
         toast.error("Sai tài khoản hoặc mật khẩu ❌");
-        console.log(error.message);
+        console.error(error.message);
       } else {
         toast.success("Đăng nhập thành công 🎉");
         setTimeout(() => router.push("/admin"), 1200);
       }
     } catch (err) {
       toast.error("Lỗi hệ thống. Vui lòng thử lại ⚠️");
-      console.log(err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
