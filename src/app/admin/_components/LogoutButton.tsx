@@ -13,7 +13,7 @@ export function LogoutButton() {
       onClick={async () => {
         try {
           setLoading(true);
-          const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
+          const supabase = supabaseBrowser();
           await supabase.auth.signOut();
           router.push("/login");
         } finally {
