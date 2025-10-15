@@ -1,13 +1,13 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import { uploadBannerAction } from "./action";
 import { toast } from "sonner";
 import { AdminBannerImages } from "@/app/components/AdminBannerImages";
 import type { BannerImage as UIBannerImage } from "@/app/components/AdminBannerImages";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { fileToWebp } from "@/app/lib/img-webp";
 
 /* ========= TYPES ========= */
@@ -78,6 +78,13 @@ export default function Page() {
   // overlay
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState<string>("");
+
+  // preview state
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<
+    { name: string; size: number; url: string }[]
+  >([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const supabase = useMemo(() => supabaseBrowser(), []);
 
@@ -189,27 +196,72 @@ export default function Page() {
     loadImages();
   }, [loadImages]);
 
+  /* ======= PREVIEW HANDLERS ======= */
+  const revokeAllPreviews = useCallback(() => {
+    setPreviews((arr) => {
+      arr.forEach((p) => URL.revokeObjectURL(p.url));
+      return [];
+    });
+  }, []);
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []).filter(
+        (f) => f && f.size > 0 && f.type.startsWith("image/")
+      );
+      setSelectedFiles(files);
+      setFileError(false);
+
+      // clear old urls then create new
+      revokeAllPreviews();
+      const urls = files.map((f) => ({
+        name: f.name,
+        size: f.size,
+        url: URL.createObjectURL(f),
+      }));
+      setPreviews(urls);
+    },
+    [revokeAllPreviews]
+  );
+
+  const removePreviewAt = useCallback((idx: number) => {
+    setSelectedFiles((prev) => {
+      const arr = [...prev];
+      arr.splice(idx, 1);
+      return arr;
+    });
+    setPreviews((prev) => {
+      const arr = [...prev];
+      const removed = arr.splice(idx, 1)[0];
+      if (removed) URL.revokeObjectURL(removed.url);
+      return arr;
+    });
+    // không thể sửa FileList; input không còn là nguồn sự thật nên reset là ok
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const clearAllPreviews = useCallback(() => {
+    setSelectedFiles([]);
+    revokeAllPreviews();
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [revokeAllPreviews]);
+
+  /* ======= SUBMIT ======= */
   const handleUpload = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (isUploading) return;
 
-      const form = e.currentTarget;
-      const fd = new FormData(form);
-      const files = (fd.getAll("files") as File[]).filter(
-        (f) => f instanceof File && f.size > 0
-      );
-
-      if (files.length === 0) {
+      if (selectedFiles.length === 0) {
         setFileError(true);
         toast.error("Chưa chọn ảnh", {
           description: "Hãy chọn ít nhất một ảnh trước khi upload.",
         });
-        const input = form.querySelector(
-          'input[name="files"]'
-        ) as HTMLInputElement | null;
-        input?.focus();
-        input?.scrollIntoView({ behavior: "smooth", block: "center" });
+        fileInputRef.current?.focus();
+        fileInputRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
         return;
       }
 
@@ -217,48 +269,57 @@ export default function Page() {
       setBusy(true);
       setBusyText("Đang chuyển ảnh sang WebP…");
 
-      // Tham số nén: khác nhau cho PC vs Mobile
+      // tuỳ thiết bị → cấu hình nén
       const webpOpts = {
         maxWidth: device === "mobile" ? 1440 : 2560,
         maxHeight: device === "mobile" ? 1440 : 2560,
-        targetBytes: device === "mobile" ? 450_000 : 900_000, // ~450KB mobile, ~900KB PC
+        targetBytes: device === "mobile" ? 450_000 : 900_000,
         quality: 0.82,
         minQuality: 0.6,
       } as const;
 
-      // Chuyển tất cả file đã chọn sang WebP
-      const converted = await Promise.all(
-        files.map((f) => fileToWebp(f, webpOpts))
-      );
+      try {
+        // Convert toàn bộ sang webp
+        const converted = await Promise.all(
+          selectedFiles.map((f) => fileToWebp(f, webpOpts))
+        );
 
-      // Tạo FormData mới chỉ chứa file WebP (và metadata cũ)
-      const fd2 = new FormData();
-      fd2.set("location", location.key);
-      fd2.set("device", device);
-      converted.forEach((f) => fd2.append("files", f, f.name));
+        const fd = new FormData();
+        fd.set("location", location.key);
+        fd.set("device", device);
+        converted.forEach((f) => fd.append("files", f, f.name));
 
-      // Gọi server action với fd2 (thay vì fd cũ)
-      const res = await uploadBannerAction(fd2);
+        const res = await uploadBannerAction(fd);
 
-      if (!res.ok) {
-        toast.error("Upload có lỗi", {
-          description: JSON.stringify(res.detail?.errors || [], null, 2),
-        });
-      } else {
-        toast.success(`Đã upload ${res.uploaded} ảnh (định dạng WebP)`);
+        if (!res.ok) {
+          toast.error("Upload có lỗi", {
+            description: JSON.stringify(res.detail?.errors || [], null, 2),
+          });
+        } else {
+          toast.success(`Đã upload ${res.uploaded} ảnh (WebP)`);
+        }
+
+        await loadImages();
+        // reset chọn file
+        clearAllPreviews();
+        setFileError(false);
+      } finally {
+        setIsUploading(false);
+        setBusy(false);
+        setBusyText("");
       }
-
-      await loadImages();
-      form.reset();
-      setFileError(false);
-      setIsUploading(false);
-      setBusy(false);
-      setBusyText("");
-      return;
     },
-    [device, location.key, loadImages, isUploading]
+    [
+      device,
+      location.key,
+      selectedFiles,
+      loadImages,
+      isUploading,
+      clearAllPreviews,
+    ]
   );
 
+  /* ======= DELETE ======= */
   const handleDeleteOne = useCallback(
     async (img: UIBannerImage) => {
       try {
@@ -314,6 +375,11 @@ export default function Page() {
     [supabase, loadImages]
   );
 
+  // cleanup object URLs khi unmount
+  useEffect(() => () => revokeAllPreviews(), [revokeAllPreviews]);
+
+  const totalSize = previews.reduce((s, p) => s + p.size, 0);
+
   return (
     <main className="mx-auto max-w-6xl space-y-8 p-6">
       {busy && <FullscreenLoader text={busyText} />}
@@ -361,16 +427,63 @@ export default function Page() {
           <input type="hidden" name="location" value={location.key} />
           <input
             id="bannerFiles"
+            ref={fileInputRef}
             name="files"
             type="file"
             accept="image/*"
             multiple
             required
-            onChange={() => setFileError(false)}
+            onChange={handleFileChange}
             className={`cursor-pointer ${
               fileError ? "ring-2 ring-red-500" : ""
             }`}
           />
+
+          {/* Preview block */}
+          {previews.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-neutral-600">
+                  Đã chọn <b>{previews.length}</b> ảnh · tổng ~
+                  {(totalSize / 1024 / 1024).toFixed(2)} MB
+                </p>
+                <button
+                  type="button"
+                  className="text-sm underline hover:opacity-80"
+                  onClick={clearAllPreviews}
+                >
+                  Xoá tất cả
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                {previews.map((p, i) => (
+                  <div
+                    key={`${p.name}-${i}`}
+                    className="group relative overflow-hidden rounded-lg border bg-white"
+                  >
+                    {/* Dùng <img> để tránh domain config */}
+                    <img
+                      src={p.url}
+                      alt={p.name}
+                      className="aspect-[4/3] w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePreviewAt(i)}
+                      className="absolute right-1 top-1 inline-flex items-center rounded-full bg-black/60 p-1 text-white opacity-0 transition group-hover:opacity-100"
+                      title="Bỏ ảnh này khỏi danh sách"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/40 px-2 py-1 text-[10px] text-white">
+                      {p.name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isUploading}
