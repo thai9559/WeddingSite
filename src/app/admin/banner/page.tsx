@@ -57,6 +57,8 @@ export default function Page() {
   const [loadingImages, setLoadingImages] = useState<boolean>(false);
   const [bannerImages, setBannerImages] = useState<BannerImage[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [fileError, setFileError] = useState(false);
 
   const supabase = useMemo(() => supabaseBrowser(), []);
 
@@ -189,23 +191,30 @@ export default function Page() {
   const handleUpload = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
+      if (isUploading) return; // tránh double-click
 
-      // 👇 Giữ tham chiếu form trước mọi await (tránh event pooling)
       const form = e.currentTarget;
+      const fd = new FormData(form);
 
-      // 👇 Chặn submit khi không có file nào được chọn
-      const input = form.querySelector(
-        'input[name="files"]'
-      ) as HTMLInputElement | null;
-      const hasFiles = !!input?.files && input.files.length > 0;
-      if (!hasFiles) {
-        toast.message("Chưa chọn ảnh", {
-          description: "Hãy chọn ít nhất một ảnh rồi upload.",
+      // ✅ kiểm tra thật sự có file (lọc cả file rỗng)
+      const files = (fd.getAll("files") as File[]).filter(
+        (f) => f instanceof File && f.size > 0
+      );
+
+      if (files.length === 0) {
+        setFileError(true);
+        toast.error("Chưa chọn ảnh", {
+          description: "Hãy chọn ít nhất một ảnh trước khi upload.",
         });
-        return; // ❌ Không gọi uploadAction, không load/reload, không reset
+        const input = form.querySelector(
+          'input[name="files"]'
+        ) as HTMLInputElement | null;
+        input?.focus();
+        input?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return; // ⛔ không gọi server action, không reset form
       }
 
-      const fd = new FormData(form);
+      setIsUploading(true);
       fd.set("location", location.key);
       fd.set("device", device);
 
@@ -220,9 +229,11 @@ export default function Page() {
       }
 
       await loadImages();
-      form.reset(); // ✅ OK vì ta đã “chụp” sẵn form
+      form.reset();
+      setFileError(false);
+      setIsUploading(false);
     },
-    [device, location.key, loadImages]
+    [device, location.key, loadImages, isUploading]
   );
 
   const handleDeleteOne = useCallback(
@@ -322,19 +333,25 @@ export default function Page() {
           className="flex flex-col gap-3 rounded border p-4"
         >
           <input type="hidden" name="location" value={location.key} />
-          <input type="hidden" name="device" value={device} />
           <input
+            id="bannerFiles"
             name="files"
             type="file"
             accept="image/*"
             multiple
-            className="cursor-pointer"
+            required
+            onChange={() => setFileError(false)}
+            className={`cursor-pointer ${
+              fileError ? "ring-2 ring-red-500" : ""
+            }`}
           />
+
           <button
             type="submit"
-            className="rounded bg-black px-4 py-2 text-white hover:opacity-90"
+            disabled={isUploading}
+            className="rounded bg-black px-4 py-2 text-white hover:opacity-90 disabled:opacity-50"
           >
-            Upload ảnh
+            {isUploading ? "Đang upload…" : "Upload ảnh"}
           </button>
         </form>
       </section>
