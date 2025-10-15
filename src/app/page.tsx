@@ -1,5 +1,4 @@
 // src/app/page.tsx
-import Header from "./components/Header";
 import { Hero } from "./components/Hero";
 import { Approach } from "./components/Approach";
 import Albums from "./components/Cards";
@@ -14,7 +13,6 @@ export default function Home() {
 
   return (
     <main className="bg-white text-neutral-800">
-      <Header />
       <Hero />
       {/* <WeddingGallery data={data} /> */}
       <div className="text-center my-16 relative">

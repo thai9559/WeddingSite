@@ -123,11 +123,7 @@ export function Hero() {
         throw new Error("Không thể tạo URL ảnh (có thể private/policy).");
       }
 
-      const mapped: ForestSlide[] = urls.map((src, i) => ({
-        src,
-        heading: i === 0 ? "Our Wedding Day" : "Happily Ever After",
-        subheading: i === 0 ? "A celebration of love" : "The journey continues",
-      }));
+      const mapped: ForestSlide[] = urls.map((src) => ({ src }));
 
       cacheRef.current[dv] = mapped;
       setSlides(mapped);

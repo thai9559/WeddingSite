@@ -1,7 +1,6 @@
 import { EVENT } from "@/app/rsvp/event";
 import InfoCards from "../rsvp/components/InfoCards";
 import Schedule from "../rsvp/components/Schedule";
-import DressCode from "../rsvp/components/DressCode";
 import Contact from "../rsvp/components/Contact";
 import RSVPCard from "../rsvp/components/RSVPCard";
 
@@ -45,7 +44,6 @@ export default function RSVPPage() {
           <div className="lg:col-span-7 space-y-10">
             <InfoCards />
             <Schedule />
-            <DressCode codes={EVENT.dressCode} />
           </div>
 
           <div className="lg:col-span-5 space-y-6">
