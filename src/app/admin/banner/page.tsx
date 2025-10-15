@@ -1,6 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
+import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import { uploadBannerAction } from "./action";
@@ -23,7 +24,6 @@ export type BannerLocation = { id: number; key: string; name: string };
 
 /* ========= CONSTS ========= */
 const BUCKET = "wedding";
-const IS_PRIVATE_BUCKET = false;
 const RESERVED_NAMES = new Set([
   ".emptyfolderplaceholder",
   ".ds_store",
@@ -37,17 +37,17 @@ const LOCATIONS: BannerLocation[] = [
 function buildPrefix(location: string, device: Device) {
   return `banners/${location}/${device}`;
 }
+
+/** Ưu tiên signed URL để "bẻ" cache; fallback public URL kèm cache-buster. */
 async function getUrl(path: string) {
   const supabase = supabaseBrowser();
-  if (!IS_PRIVATE_BUCKET) {
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    return data.publicUrl;
-  }
-  const { data, error } = await supabase.storage
+  const signed = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(path, 60 * 60);
-  if (error) throw error;
-  return data.signedUrl;
+    .createSignedUrl(path, 60 * 5);
+  if (!signed.error && signed.data?.signedUrl) return signed.data.signedUrl;
+
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return `${data.publicUrl}?v=${Date.now()}`;
 }
 
 /* ========= SMALL UI ========= */
@@ -60,7 +60,7 @@ const FullscreenLoader = ({ text }: { text?: string }) => (
   </div>
 );
 const SkeletonCard = () => (
-  <div className="aspect-[4/3] w-full rounded border bg-neutral-200/70 animate-pulse" />
+  <div className="aspect-[4/3] w-full animate-pulse rounded border bg-neutral-200/70" />
 );
 
 /* ========= PAGE ========= */
@@ -149,23 +149,23 @@ export default function Page() {
     [supabase]
   );
 
-  const fileExists = async (
-    path: string,
-    supabaseClient = supabaseBrowser()
-  ) => {
-    const { data, error } = await supabaseClient.storage
+  /** Kiểm tra object còn tồn tại không bằng cách thử ký URL ngắn hạn. */
+  const fileExists = async (path: string, supa = supabaseBrowser()) => {
+    const { data, error } = await supa.storage
       .from(BUCKET)
       .createSignedUrl(path, 60);
     return !!data?.signedUrl && !error;
   };
+
+  /** Lọc row mồ côi (DB có nhưng file đã xoá); đồng thời xoá luôn row DB. */
   const pruneMissingFromDB = async (
     rows: BannerImage[],
-    supabaseClient = supabaseBrowser()
+    supa = supabaseBrowser()
   ) => {
     const checks = await Promise.all(
       rows.map(async (r) => ({
         r,
-        ok: await fileExists(r.path, supabaseClient).catch(() => false),
+        ok: await fileExists(r.path, supa).catch(() => false),
       }))
     );
     const toKeep = checks.filter((c) => c.ok).map((c) => c.r);
@@ -173,7 +173,7 @@ export default function Page() {
       .filter((c) => !c.ok && c.r.id > 0)
       .map((c) => c.r.id);
     if (toDeleteIds.length)
-      await supabaseClient.from("banner_images").delete().in("id", toDeleteIds);
+      await supa.from("banner_images").delete().in("id", toDeleteIds);
     return toKeep;
   };
 
@@ -236,7 +236,6 @@ export default function Page() {
       if (removed) URL.revokeObjectURL(removed.url);
       return arr;
     });
-    // không thể sửa FileList; input không còn là nguồn sự thật nên reset là ok
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
@@ -300,7 +299,6 @@ export default function Page() {
         }
 
         await loadImages();
-        // reset chọn file
         clearAllPreviews();
         setFileError(false);
       } finally {
@@ -390,7 +388,7 @@ export default function Page() {
       <section className="flex flex-wrap items-center gap-3">
         <label className="text-sm font-medium">Location</label>
         <select
-          className="rounded border px-3 py-2 bg-neutral-100"
+          className="rounded border bg-neutral-100 px-3 py-2"
           value={location.key}
           disabled
         >

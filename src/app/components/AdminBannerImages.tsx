@@ -104,7 +104,8 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
       setSrcMap((m) => ({ ...m, [img.id]: signed }));
       setTriedSigned((m) => ({ ...m, [img.id]: true }));
     } catch {
-      // có thể set placeholder nếu muốn
+      // (tuỳ chọn) thông báo &/hoặc gợi ý xóa row DB
+      // toast.info(`Ảnh ${img.id} đã bị xoá khỏi Storage. Bạn có muốn dọn row DB?`);
     }
   }
 
