@@ -99,16 +99,27 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
     // ⬇️ Sửa từ /api/... thành /admin/rsvps/export
     return `/admin/rsvps/export?${params.toString()}`;
   };
-  // ...
+  // helper chung (đặt ở file này hoặc utils)
+  function errorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === "string") return err;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
 
-  const onDownload = async (format: "csv" | "xlsx") => {
+  // trước đây:
+  // const onDownload = async (format: "csv" | "xlsx") => {
+  const onDownload = async (format: "csv" | "xlsx"): Promise<void> => {
     try {
       setDownloading(format);
       const url = buildExportUrl(format);
       const fallback = `rsvps-${eventKey}.${format}`;
       await downloadFromApi(url, fallback);
-    } catch (e: any) {
-      alert(e?.message || "Xuất dữ liệu thất bại.");
+    } catch (e: unknown) {
+      alert(errorMessage(e) || "Xuất dữ liệu thất bại.");
     } finally {
       setDownloading(null);
     }

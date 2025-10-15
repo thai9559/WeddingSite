@@ -1,6 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { uploadAlbumAction } from "./actions";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
@@ -46,6 +47,17 @@ function getCoverPreset() {
     quality: 0.84,
     minQuality: 0.6,
   };
+}
+
+/* ---------- error helper ---------- */
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
 }
 
 /* ---------- Overlay & Skeleton ---------- */
@@ -111,6 +123,8 @@ export default function AdminUploadPage() {
         if (error) throw error;
         setAlbums((data as Album[]) ?? []);
       } catch (err) {
+        // chỉ log — không hiển thị toast để tránh ồn
+        // eslint-disable-next-line no-console
         console.error("Lỗi load albums:", err);
       }
     })();
@@ -152,8 +166,8 @@ export default function AdminUploadPage() {
       try {
         const data = await fetchImagesDual(albumId);
         setImages(data || []);
-      } catch (err: any) {
-        setErrorImages(err?.message || "Không tải được ảnh.");
+      } catch (err: unknown) {
+        setErrorImages(errorMessage(err) || "Không tải được ảnh.");
       } finally {
         setLoadingImages(false);
       }
@@ -209,9 +223,9 @@ export default function AdminUploadPage() {
       setCoverName(webp.name);
       setCoverSize(webp.size);
       toast.success("Đã nén cover sang WebP");
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error("Không nén được ảnh cover", {
-        description: err?.message || String(err),
+        description: errorMessage(err),
       });
       setCover(null);
       // vẫn giữ name/size của file gốc để người dùng thấy
@@ -246,9 +260,9 @@ export default function AdminUploadPage() {
           size: webp.size,
           url: URL.createObjectURL(webp),
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         toast.error(`Không nén được ảnh: ${f.name}`, {
-          description: err?.message || String(err),
+          description: errorMessage(err),
         });
       }
     }
@@ -315,10 +329,8 @@ export default function AdminUploadPage() {
 
       setImages((prev) => prev.filter((x) => x.id !== img.id));
       toast.success("Đã xoá ảnh");
-    } catch (err: any) {
-      toast.error("Xoá ảnh thất bại", {
-        description: err?.message || String(err),
-      });
+    } catch (err: unknown) {
+      toast.error("Xoá ảnh thất bại", { description: errorMessage(err) });
     } finally {
       setDeletingId(null);
       setBusy(false);
@@ -357,10 +369,8 @@ export default function AdminUploadPage() {
 
       // reload list
       await reloadImages(selectedAlbumId);
-    } catch (err: any) {
-      toast.error("Upload thất bại", {
-        description: err?.message || String(err),
-      });
+    } catch (err: unknown) {
+      toast.error("Upload thất bại", { description: errorMessage(err) });
     } finally {
       setBusy(false);
       setBusyText("");
@@ -491,12 +501,18 @@ export default function AdminUploadPage() {
                     key={`${p.name}-${i}`}
                     className="group relative overflow-hidden rounded-lg border bg-white"
                   >
-                    {/* ảnh */}
-                    <img
-                      src={p.url}
-                      alt={p.name}
-                      className="aspect-[4/3] w-full object-cover"
-                    />
+                    <div className="relative aspect-[4/3] w-full">
+                      <Image
+                        src={p.url}
+                        alt={p.name}
+                        fill
+                        sizes="(max-width:640px) 50vw, (max-width:1024px) 33vw, 25vw"
+                        className="object-cover"
+                        unoptimized
+                        loading="lazy"
+                        // decoding prop không có trên next/image, giữ mặc định lazy
+                      />
+                    </div>
 
                     {/* overlay hover nhẹ */}
                     <div className="absolute inset-0 bg-black/10 opacity-0 transition group-hover:opacity-100" />

@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
 
-export const runtime = "nodejs";      // đảm bảo không chạy Edge (xlsx cần Node)
+export const runtime = "nodejs"; // đảm bảo không chạy Edge (xlsx cần Node)
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
 
@@ -82,9 +82,7 @@ export async function GET(req: NextRequest) {
     const admin = supabaseAdmin();
     let query = admin
         .from("wedding_rsvps")
-        .select(
-            "id,event_key,name,phone,guests_count,relation_key,relation_note,message,source_ip,created_at"
-        )
+        .select("id,event_key,name,phone,guests_count,relation_key,relation_note,message,source_ip,created_at")
         .eq("event_key", event)
         .order("created_at", { ascending: false });
 
@@ -113,40 +111,45 @@ export async function GET(req: NextRequest) {
     // -------- XLSX (server-side) --------
     if (format === "xlsx") {
         const XLSX = await import("xlsx");
-        const sheetData = rows.map((r, i) => ({
-            STT: i + 1,
-            event_key: r.event_key,
-            name: r.name ?? "",
-            phone: r.phone ?? "",
-            relation_key: r.relation_key ?? "",
-            relation_label: relationLabel(String(r.relation_key)),
-            relation_note: r.relation_note ?? "",
-            guests_count: r.guests_count,
-            message: r.message ?? "",
-            ...(withIp ? { source_ip: r.source_ip ?? "" } : {}),
-            created_at: r.created_at,
-            created_at_vi: formatVN(r.created_at),
-        }));
 
-        const ws = XLSX.utils.json_to_sheet(sheetData);
-        const wb = XLSX.utils.book_new();
+        // Chuẩn hóa dữ liệu cho sheet (tránh any)
+        type SheetValue = string | number;
+        type SheetRow = Record<string, SheetValue>;
+        const sheetData: SheetRow[] = rows.map((r, i) => {
+            const base: SheetRow = {
+                STT: i + 1,
+                event_key: r.event_key,
+                name: r.name ?? "",
+                phone: r.phone ?? "",
+                relation_key: String(r.relation_key ?? ""),
+                relation_label: relationLabel(String(r.relation_key)),
+                relation_note: r.relation_note ?? "",
+                guests_count: r.guests_count,
+                message: r.message ?? "",
+                created_at: r.created_at,
+                created_at_vi: formatVN(r.created_at),
+            };
+            if (withIp) base.source_ip = r.source_ip ?? "";
+            return base;
+        });
+
+        // Khai báo kiểu tường minh cho worksheet/workbook
+        const ws: import("xlsx").WorkSheet = XLSX.utils.json_to_sheet(sheetData);
+        const wb: import("xlsx").WorkBook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "RSVP");
 
-        // Auto-fit cột đơn giản
-        const headers = Object.keys(sheetData[0] || {});
-        (ws as any)["!cols"] = headers.map((h) => {
-            const maxLen = Math.max(
-                h.length,
-                ...sheetData.map((row: any) => String(row[h] ?? "").length)
-            );
+        // Auto-fit cột đơn giản (không dùng any)
+        const headers = Object.keys(sheetData[0] ?? {});
+        const cols: import("xlsx").ColInfo[] = headers.map((h) => {
+            const maxLen = Math.max(h.length, ...sheetData.map((row) => String(row[h] ?? "").length));
             return { wch: Math.min(Math.max(Math.ceil(maxLen * 1.2), 8), 60) };
         });
+        ws["!cols"] = cols;
 
         const buf = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
         return new NextResponse(buf, {
             headers: {
-                "Content-Type":
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "Content-Disposition": `attachment; filename="rsvps-${event}.xlsx"`,
                 "Cache-Control": "no-store",
             },

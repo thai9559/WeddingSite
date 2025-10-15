@@ -1,12 +1,12 @@
 // src/app/lib/img-webp.ts
 export type WebpOptions = {
-    maxWidth?: number;           // giới hạn chiều rộng
-    maxHeight?: number;          // giới hạn chiều cao
-    quality?: number;            // 0..1 (mặc định 0.82)
-    minQuality?: number;         // 0..1 (mặc định 0.6)
-    targetBytes?: number;        // mục tiêu dung lượng (bytes), ví dụ 500_000 (~500KB)
-    mime?: "image/webp";         // luôn webp
-    debug?: boolean;             // log debug
+    maxWidth?: number;      // giới hạn chiều rộng
+    maxHeight?: number;     // giới hạn chiều cao
+    quality?: number;       // 0..1 (mặc định 0.82)
+    minQuality?: number;    // 0..1 (mặc định 0.6)
+    targetBytes?: number;   // mục tiêu dung lượng (bytes), ví dụ 500_000 (~500KB)
+    mime?: "image/webp";    // luôn webp
+    debug?: boolean;        // log debug
 };
 
 const isImage = (file: File) => /^image\//i.test(file.type);
@@ -23,7 +23,11 @@ function loadImageFromFile(file: File): Promise<HTMLImageElement> {
 
         const url = URL.createObjectURL(file);
         const cleanup = () => {
-            try { URL.revokeObjectURL(url); } catch { }
+            try {
+                URL.revokeObjectURL(url);
+            } catch {
+                // ignore
+            }
         };
 
         img.onload = () => {
@@ -46,13 +50,20 @@ function drawToCanvas(img: HTMLImageElement, maxW?: number, maxH?: number): HTML
     const iw = img.naturalWidth || img.width;
     const ih = img.naturalHeight || img.height;
 
+    const makeCtx = (c: HTMLCanvasElement): CanvasRenderingContext2D => {
+        const ctx = c.getContext("2d");
+        if (!ctx) throw new Error("Cannot acquire 2D canvas context");
+        // Thuộc tính này có trong DOM lib: CanvasRenderingContext2D
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        return ctx;
+    };
+
     if (!maxW && !maxH) {
         const c = document.createElement("canvas");
         c.width = iw;
         c.height = ih;
-        const ctx = c.getContext("2d")!;
-        (ctx as any).imageSmoothingEnabled = true;
-        (ctx as any).imageSmoothingQuality = "high";
+        const ctx = makeCtx(c);
         ctx.drawImage(img, 0, 0);
         return c;
     }
@@ -67,9 +78,7 @@ function drawToCanvas(img: HTMLImageElement, maxW?: number, maxH?: number): HTML
     const c = document.createElement("canvas");
     c.width = w;
     c.height = h;
-    const ctx = c.getContext("2d")!;
-    (ctx as any).imageSmoothingEnabled = true;
-    (ctx as any).imageSmoothingQuality = "high";
+    const ctx = makeCtx(c);
     ctx.drawImage(img, 0, 0, w, h);
     return c;
 }
@@ -80,7 +89,7 @@ function drawToCanvas(img: HTMLImageElement, maxW?: number, maxH?: number): HTML
 function canvasToWebpBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
     return new Promise((resolve, reject) => {
         canvas.toBlob(
-            (blob) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))),
+            (blob: Blob | null) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))),
             "image/webp",
             quality
         );
@@ -91,10 +100,7 @@ function canvasToWebpBlob(canvas: HTMLCanvasElement, quality: number): Promise<B
  * Nén file ảnh sang WebP, scale và lặp hạ quality để đạt targetBytes
  * Trả về File(.webp) đã tối ưu.
  */
-export async function fileToWebp(
-    file: File,
-    opts: WebpOptions = {}
-): Promise<File> {
+export async function fileToWebp(file: File, opts: WebpOptions = {}): Promise<File> {
     if (!isImage(file)) return file;
 
     const {
@@ -102,7 +108,7 @@ export async function fileToWebp(
         maxHeight,
         quality = 0.82,
         minQuality = 0.6,
-        targetBytes,                 // vd: 450_000 cho mobile, 700_000 cho PC
+        targetBytes, // vd: 450_000 cho mobile, 700_000 cho PC
         mime = "image/webp",
         debug = false,
     } = opts;
@@ -116,17 +122,21 @@ export async function fileToWebp(
         const ih = img.naturalHeight || img.height;
         const pixelScale = (canvas.width * canvas.height) / (iw * ih);
         const linearScalePct = Math.sqrt(pixelScale) * 100; // tỉ lệ cạnh ~%
+        // eslint-disable-next-line no-console
         console.log(
-            `[webp] src=${file.type} size=${file.size}B `
-            + `orig=${iw}x${ih} → canvas=${canvas.width}x${canvas.height} `
-            + `scale≈${linearScalePct.toFixed(1)}% `
-            + `q0=${quality} target=${targetBytes ?? "n/a"}`
+            `[webp] src=${file.type} size=${file.size}B ` +
+            `orig=${iw}x${ih} → canvas=${canvas.width}x${canvas.height} ` +
+            `scale≈${linearScalePct.toFixed(1)}% ` +
+            `q0=${quality} target=${targetBytes ?? "n/a"}`
         );
     }
 
     // Nếu file gốc đã nhỏ hơn targetBytes đáng kể và là webp, có thể giữ nguyên
     if (targetBytes && file.type === "image/webp" && file.size <= targetBytes) {
-        if (debug) console.log("[webp] skip: source is webp and <= targetBytes → keep original");
+        if (debug) {
+            // eslint-disable-next-line no-console
+            console.log("[webp] skip: source is webp and <= targetBytes → keep original");
+        }
         return file;
     }
 
@@ -139,6 +149,7 @@ export async function fileToWebp(
             q = Math.max(minQuality, +(q - 0.05).toFixed(2));
             blob = await canvasToWebpBlob(canvas, q);
             if (debug) {
+                // eslint-disable-next-line no-console
                 console.log(`[webp] retry quality=${q} size=${blob.size}B (~${Math.round(blob.size / 1024)}KB)`);
             }
             if (q === minQuality) break;
@@ -147,9 +158,8 @@ export async function fileToWebp(
 
     // --- LOG 2: trạng thái cuối (quality chốt & size cuối) ---
     if (debug) {
-        console.log(
-            `[webp] final: q=${q.toFixed(2)} size=${blob.size}B (~${Math.round(blob.size / 1024)}KB)`
-        );
+        // eslint-disable-next-line no-console
+        console.log(`[webp] final: q=${q.toFixed(2)} size=${blob.size}B (~${Math.round(blob.size / 1024)}KB)`);
     }
 
     const nameNoExt = file.name.replace(/\.[^.]+$/, ""); // bỏ đuôi cũ

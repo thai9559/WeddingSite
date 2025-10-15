@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 
 import type React from "react";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import { uploadBannerAction } from "./action";
@@ -50,6 +51,20 @@ async function getUrl(path: string) {
   return `${data.publicUrl}?v=${Date.now()}`;
 }
 
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const m = (err as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+  }
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 /* ========= SMALL UI ========= */
 const FullscreenLoader = ({ text }: { text?: string }) => (
   <div className="fixed inset-0 z-[100] grid place-items-center bg-black/30 backdrop-blur-sm">
@@ -90,6 +105,12 @@ export default function Page() {
 
   const fetchFromDB = useCallback(
     async (loc: string, dv: Device): Promise<BannerImage[]> => {
+      type DBRow = {
+        id: number;
+        path: string;
+        location: string;
+        device: Device | null;
+      };
       const { data, error } = await supabase
         .from("banner_images")
         .select("id, path, location, device")
@@ -101,15 +122,15 @@ export default function Page() {
         .order("id", { ascending: false });
       if (error) throw error;
 
-      const rows: BannerImageRow[] = (data ?? []).map((r: any) => ({
-        id: r.id,
-        path: r.path,
-        location: r.location,
-        device: (r.device as Device) || dv,
-      }));
-
+      const rows = (data ?? []) as DBRow[];
       const mapped: BannerImage[] = await Promise.all(
-        rows.map(async (r) => ({ ...r, url: await getUrl(r.path) }))
+        rows.map(async (r) => ({
+          id: r.id,
+          path: r.path,
+          location: r.location,
+          device: (r.device ?? dv) as Device,
+          url: await getUrl(r.path),
+        }))
       );
       return mapped;
     },
@@ -150,32 +171,35 @@ export default function Page() {
   );
 
   /** Kiểm tra object còn tồn tại không bằng cách thử ký URL ngắn hạn. */
-  const fileExists = async (path: string, supa = supabaseBrowser()) => {
-    const { data, error } = await supa.storage
-      .from(BUCKET)
-      .createSignedUrl(path, 60);
-    return !!data?.signedUrl && !error;
-  };
+  const fileExists = useCallback(
+    async (path: string, supa = supabaseBrowser()) => {
+      const { data, error } = await supa.storage
+        .from(BUCKET)
+        .createSignedUrl(path, 60);
+      return !!data?.signedUrl && !error;
+    },
+    []
+  );
 
   /** Lọc row mồ côi (DB có nhưng file đã xoá); đồng thời xoá luôn row DB. */
-  const pruneMissingFromDB = async (
-    rows: BannerImage[],
-    supa = supabaseBrowser()
-  ) => {
-    const checks = await Promise.all(
-      rows.map(async (r) => ({
-        r,
-        ok: await fileExists(r.path, supa).catch(() => false),
-      }))
-    );
-    const toKeep = checks.filter((c) => c.ok).map((c) => c.r);
-    const toDeleteIds = checks
-      .filter((c) => !c.ok && c.r.id > 0)
-      .map((c) => c.r.id);
-    if (toDeleteIds.length)
-      await supa.from("banner_images").delete().in("id", toDeleteIds);
-    return toKeep;
-  };
+  const pruneMissingFromDB = useCallback(
+    async (rows: BannerImage[], supa = supabaseBrowser()) => {
+      const checks = await Promise.all(
+        rows.map(async (r) => ({
+          r,
+          ok: await fileExists(r.path, supa).catch(() => false),
+        }))
+      );
+      const toKeep = checks.filter((c) => c.ok).map((c) => c.r);
+      const toDeleteIds = checks
+        .filter((c) => !c.ok && c.r.id > 0)
+        .map((c) => c.r.id);
+      if (toDeleteIds.length)
+        await supa.from("banner_images").delete().in("id", toDeleteIds);
+      return toKeep;
+    },
+    [fileExists]
+  );
 
   const loadImages = useCallback(async () => {
     setLoadingImages(true);
@@ -184,13 +208,21 @@ export default function Page() {
       if (imgs.length) imgs = await pruneMissingFromDB(imgs, supabase);
       if (!imgs.length) imgs = await fetchFromStorage(location.key, device);
       setBannerImages(imgs);
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e?.message || "Lỗi tải ảnh");
+    } catch (err: unknown) {
+      // eslint-disable-next-line no-console
+      console.error(err);
+      toast.error(errorMessage(err) || "Lỗi tải ảnh");
     } finally {
       setLoadingImages(false);
     }
-  }, [device, location.key, fetchFromDB, fetchFromStorage, supabase]);
+  }, [
+    device,
+    location.key,
+    fetchFromDB,
+    fetchFromStorage,
+    pruneMissingFromDB,
+    supabase,
+  ]);
 
   useEffect(() => {
     loadImages();
@@ -325,13 +357,20 @@ export default function Page() {
         setBusy(true);
         setBusyText("Đang xoá ảnh…");
 
-        const is404 = (err: unknown): boolean =>
-          typeof err === "object" &&
-          err !== null &&
-          "statusCode" in (err as any) &&
-          (err as any).statusCode === 404;
+        type MaybeSBError = {
+          message?: string;
+          statusCode?: number;
+          status?: number;
+        };
+        const is404 = (err: unknown): boolean => {
+          if (typeof err === "object" && err !== null) {
+            const e = err as MaybeSBError;
+            return e.statusCode === 404 || e.status === 404;
+          }
+          return false;
+        };
 
-        let storageErr: any = null;
+        let storageErr: unknown = null;
         if (img.path) {
           const { error } = await supabase.storage
             .from(BUCKET)
@@ -339,7 +378,7 @@ export default function Page() {
           if (error && !is404(error)) storageErr = error;
         }
 
-        let dbErr: any = null;
+        let dbErr: unknown = null;
         if (img.id > 0) {
           const { error } = await supabase
             .from("banner_images")
@@ -351,7 +390,7 @@ export default function Page() {
         if (storageErr || dbErr) {
           toast.error("Một phần xoá bị lỗi", {
             description: JSON.stringify(
-              { storage: storageErr?.message, db: dbErr?.message },
+              { storage: errorMessage(storageErr), db: errorMessage(dbErr) },
               null,
               2
             ),
@@ -361,9 +400,10 @@ export default function Page() {
         }
 
         await loadImages();
-      } catch (e: any) {
-        console.error(e);
-        toast.error(e?.message || "Xoá thất bại");
+      } catch (err: unknown) {
+        // eslint-disable-next-line no-console
+        console.error(err);
+        toast.error(errorMessage(err) || "Xoá thất bại");
       } finally {
         setDeletingId(null);
         setBusy(false);
@@ -459,12 +499,18 @@ export default function Page() {
                     key={`${p.name}-${i}`}
                     className="group relative overflow-hidden rounded-lg border bg-white"
                   >
-                    {/* Dùng <img> để tránh domain config */}
-                    <img
-                      src={p.url}
-                      alt={p.name}
-                      className="aspect-[4/3] w-full object-cover"
-                    />
+                    <div className="relative aspect-[4/3] w-full">
+                      {/* dùng next/image để tránh warning no-img-element; blob URL + unoptimized */}
+                      <Image
+                        src={p.url}
+                        alt={p.name}
+                        fill
+                        sizes="(max-width:640px) 50vw, (max-width:1024px) 33vw, 25vw"
+                        className="object-cover"
+                        unoptimized
+                        priority={false}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => removePreviewAt(i)}
