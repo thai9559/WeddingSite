@@ -14,7 +14,7 @@ const PREFIX = (dv: Device) => `banners/hero/${dv}`;
 const MAX_SLIDES = 12;
 const IMG_EXT = /\.(jpe?g|png|webp|gif|avif)$/i;
 
-// --- helpers ---
+/* -------------------- helpers -------------------- */
 
 function getPublicUrl(path: string): string {
   const { data } = supabaseBrowser().storage.from(BUCKET).getPublicUrl(path);
@@ -31,12 +31,11 @@ async function getUrl(path: string): Promise<string> {
   if (error || !data?.signedUrl) {
     throw error ?? new Error("Không tạo signed URL");
   }
-
   return data.signedUrl;
 }
 
 async function listFiles(prefix: string): Promise<string[]> {
-  const cleanPrefix = prefix.replace(/^\/+|\/+$/g, ""); // tránh lỗi "///"
+  const cleanPrefix = prefix.replace(/^\/+|\/+$/g, ""); // tránh "///"
 
   const { data, error } = await supabaseBrowser()
     .storage.from(BUCKET)
@@ -60,9 +59,12 @@ async function listFiles(prefix: string): Promise<string[]> {
   );
 }
 
-// --- component ---
+/* -------------------- component -------------------- */
+
 export function Hero() {
-  const [device, setDevice] = useState<Device>("mobile"); // sẽ auto sync theo breakpoint
+  // Chỉ dùng setter để kích hoạt reload theo breakpoint -> tránh biến không dùng
+  const [, setDevice] = useState<Device>("mobile");
+  const [ready, setReady] = useState(false);
   const [slides, setSlides] = useState<ForestSlide[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>("");
@@ -75,26 +77,19 @@ export function Hero() {
     mobile: [],
   });
 
-  // 🔸 Auto-chọn theo breakpoint md (768px)
-  useEffect(() => {
-    const mql = window.matchMedia("(min-width: 768px)");
-    const apply = () => setDevice(mql.matches ? "pc" : "mobile");
-    apply(); // set ngay khi mount
-    mql.addEventListener?.("change", apply);
-    return () => mql.removeEventListener?.("change", apply);
-  }, []);
+  // Hủy các request cũ nếu có "đua"
+  const reqIdRef = useRef(0);
 
   const loadSlides = useCallback(async (dv: Device) => {
+    const myId = ++reqIdRef.current;
+
     setLoading(true);
     setErr("");
-
-    let alive = true;
-    const guard = () => alive;
 
     try {
       // dùng cache nếu có
       if (cacheRef.current[dv]?.length) {
-        if (!guard()) return;
+        if (reqIdRef.current !== myId) return;
         setSlides(cacheRef.current[dv]);
         setIndex(0);
         sliderRef.current?.jumpTo(0);
@@ -102,7 +97,7 @@ export function Hero() {
       }
 
       const paths = await listFiles(PREFIX(dv));
-      if (!guard()) return;
+      if (reqIdRef.current !== myId) return;
 
       if (!paths.length) {
         setSlides([]);
@@ -110,7 +105,7 @@ export function Hero() {
       }
 
       const results = await Promise.allSettled(paths.map((p) => getUrl(p)));
-      if (!guard()) return;
+      if (reqIdRef.current !== myId) return;
 
       const urls = results
         .filter(
@@ -126,24 +121,48 @@ export function Hero() {
       const mapped: ForestSlide[] = urls.map((src) => ({ src }));
 
       cacheRef.current[dv] = mapped;
+      if (reqIdRef.current !== myId) return;
+
       setSlides(mapped);
       setIndex(0);
       sliderRef.current?.jumpTo(0);
     } catch (e: unknown) {
-      if (!guard()) return;
+      if (reqIdRef.current !== myId) return;
       setErr(e instanceof Error ? e.message : "Không tải được ảnh banner.");
     } finally {
-      if (guard()) setLoading(false);
+      if (reqIdRef.current === myId) setLoading(false);
     }
-
-    return () => {
-      alive = false;
-    };
   }, []);
 
+  // Breakpoint: <768 = mobile, ≥768 = pc (như cũ)
   useEffect(() => {
-    loadSlides(device);
-  }, [device, loadSlides]);
+    if (typeof window === "undefined") return;
+
+    const mql = window.matchMedia("(min-width: 768px)"); // ≥768 => pc
+    const pick = (): Device => (mql.matches ? "pc" : "mobile");
+
+    const init = pick();
+    setDevice(init);
+    setReady(true);
+    loadSlides(init);
+
+    const onChange = () => {
+      const dv = pick();
+      setDevice(dv);
+      loadSlides(dv);
+    };
+
+    mql.addEventListener?.("change", onChange);
+    // @ts-ignore - Safari cũ
+    mql.addListener?.(onChange);
+
+    return () => {
+      mql.removeEventListener?.("change", onChange);
+      // @ts-ignore
+      mql.removeListener?.(onChange);
+      reqIdRef.current++;
+    };
+  }, [loadSlides]);
 
   const hasSlides = useMemo(() => slides.length > 0, [slides]);
 
@@ -160,7 +179,7 @@ export function Hero() {
         />
       ) : (
         <div className="absolute inset-0 grid place-items-center text-white/70">
-          {loading ? "Đang tải ảnh…" : err || "Chưa có ảnh banner"}
+          {!ready || loading ? "Đang tải ảnh…" : err || "Chưa có ảnh banner"}
         </div>
       )}
 

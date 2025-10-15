@@ -31,7 +31,8 @@ export type ForestSliderHandle = {
 type Props = {
   slides: ForestSlide[];
   intervalMs?: number;
-  intensity?: number; // 0..1
+  /** 0..1: ảnh hưởng biên độ scale khi chuyển */
+  intensity?: number;
   autoplay?: boolean;
   onChange?: (index: number) => void;
 };
@@ -45,43 +46,32 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
     const [index, setIndex] = useState(0);
     const [dir, setDir] = useState<1 | -1>(1);
     const [isAnimating, setIsAnimating] = useState(false);
-
-    // safe in browser/node
-    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const hoverRef = useRef(false);
     const pendingRef = useRef<number | null>(null);
-    const startX = useRef<number | null>(null);
 
-    // easing
-    const easeCubic = useMemo(
-      () => [0.16, 1, 0.3, 1] as [number, number, number, number],
-      []
-    );
-    const transitionIn: Transition = useMemo(
-      () => ({ duration: 0.9, ease: easeCubic }),
-      [easeCubic]
-    );
-    const transitionOut: Transition = useMemo(
-      () => ({ duration: 0.7, ease: easeCubic }),
-      [easeCubic]
-    );
+    // pause khi tab ẩn
+    const [running, setRunning] = useState(true);
+    useEffect(() => {
+      const onVis = () => setRunning(!document.hidden);
+      document.addEventListener("visibilitychange", onVis);
+      return () => document.removeEventListener("visibilitychange", onVis);
+    }, []);
 
-    // navigation
+    // điều hướng
     const go = useCallback(
       (delta: 1 | -1) => {
-        if (isAnimating || count === 0) return;
+        if (isAnimating || count < 2) return;
         setIsAnimating(true);
         setDir(delta);
         setIndex((i) => (i + delta + count) % count);
       },
       [count, isAnimating]
     );
+    const next = useCallback(() => go(1), [go]);
+    const prev = useCallback(() => go(-1), [go]);
 
     const jumpTo = useCallback(
       (i: number) => {
-        if (i < 0 || i >= count) return;
-        if (i === index) return;
-
+        if (i < 0 || i >= count || i === index) return;
         if (isAnimating) {
           pendingRef.current = i;
           return;
@@ -93,94 +83,73 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
       [count, index, isAnimating]
     );
 
-    const next = useCallback(() => go(1), [go]);
-    const prev = useCallback(() => go(-1), [go]);
-
     useImperativeHandle(
       ref,
       () => ({ jumpTo, next, prev, getIndex: () => index }),
       [jumpTo, next, prev, index]
     );
 
-    // pause when offscreen / background
-    const rootRef = useRef<HTMLDivElement | null>(null);
-    const visibleRef = useRef(true);
-
+    // onChange + restart progress
+    const [progressKey, setProgressKey] = useState(0);
     useEffect(() => {
-      const el = rootRef.current;
-      if (!el) return;
+      onChange?.(index);
+      setProgressKey((k) => k + 1);
+    }, [index, onChange, intervalMs]);
 
-      const io = new IntersectionObserver(
-        ([e]) => {
-          visibleRef.current = e.isIntersecting;
-        },
-        { threshold: 0.1 }
-      );
-
-      io.observe(el);
-
-      const onVis = () => {
-        visibleRef.current = !document.hidden;
-      };
-      document.addEventListener("visibilitychange", onVis);
-
-      return () => {
-        io.disconnect();
-        document.removeEventListener("visibilitychange", onVis);
-      };
-    }, []);
-
-    // single resetTimer with visibility check
-    const resetTimer = useCallback(() => {
-      if (!autoplay) return;
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = setInterval(() => {
-        if (!hoverRef.current && !isAnimating && visibleRef.current) {
-          go(1);
-        }
-      }, intervalMs);
-    }, [autoplay, intervalMs, isAnimating, go]);
-
+    // Autoplay: setTimeout tránh drift
     useEffect(() => {
-      if (onChange) onChange(index);
-      resetTimer();
-      return () => {
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-      };
-    }, [index, onChange, resetTimer]);
+      if (!autoplay || !running || isAnimating || count < 2) return;
+      const id = window.setTimeout(() => next(), intervalMs);
+      return () => clearTimeout(id);
+    }, [autoplay, running, isAnimating, count, next, intervalMs, index]);
 
-    // touch
-    const handleTouchStart = (x: number) => {
-      startX.current = x;
+    // Swipe bằng Pointer Events
+    const startX = useRef<number | null>(null);
+    const SWIPE = 60;
+    const onPointerDown = (e: React.PointerEvent) => {
+      startX.current = e.clientX;
     };
-
-    const handleTouchMove = (x: number) => {
+    const onPointerMove = (e: React.PointerEvent) => {
       const s = startX.current;
       if (s == null) return;
-      const dx = x - s;
-      if (Math.abs(dx) > 70) {
-        if (dx < 0) {
-          next();
-        } else {
-          prev();
-        }
+      const dx = e.clientX - s;
+      if (Math.abs(dx) > SWIPE) {
+        dx < 0 ? next() : prev();
         startX.current = null;
       }
     };
+    const onPointerUp = () => {
+      startX.current = null;
+    };
 
-    // variants (⚠️ đã sửa dấu ngoặc dư thừa)
+    // Hiệu ứng NHƯ CŨ: zoom theo hướng (dir)
+    const easeCubic = useMemo(
+      () => [0.16, 1, 0.3, 1] as [number, number, number, number],
+      []
+    );
+    const transitionIn: Transition = useMemo(
+      () => ({ duration: 0.6, ease: easeCubic }),
+      [easeCubic]
+    );
+    const transitionOut: Transition = useMemo(
+      () => ({ duration: 0.5, ease: easeCubic }),
+      [easeCubic]
+    );
+
     const MAX_SCALE = 1 + 0.12 * intensity;
     const MIN_SCALE = 1 - 0.04 * intensity;
+
     const variants: Variants = useMemo(
       () => ({
         enter: (direction: 1 | -1) => ({
           opacity: 0,
           scale: direction === 1 ? MAX_SCALE : MIN_SCALE,
         }),
-        center: { opacity: 1, scale: 1, transition: transitionIn },
+        center: {
+          opacity: 1,
+          scale: 1,
+          transition: transitionIn,
+        },
         exit: (direction: 1 | -1) => ({
           opacity: 0,
           scale: direction === 1 ? 1.02 * MAX_SCALE : 1.0,
@@ -190,59 +159,29 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
       [MAX_SCALE, MIN_SCALE, transitionIn, transitionOut]
     );
 
-    // progress bar key
-    const [progressKey, setProgressKey] = useState(0);
-    useEffect(() => {
-      setProgressKey((k) => k + 1);
-    }, [index, intervalMs]);
-
-    // safety unlock animate flag
-    useEffect(() => {
-      if (!isAnimating) return;
-      const t = setTimeout(() => setIsAnimating(false), 1500);
-      return () => clearTimeout(t);
-    }, [isAnimating]);
-
-    // handlers
-    const handleMouseEnter = () => {
-      hoverRef.current = true;
-    };
-    const handleMouseLeave = () => {
-      hoverRef.current = false;
-    };
-    const handleTouchStartEvt = (e: React.TouchEvent) => {
-      handleTouchStart(e.touches[0].clientX);
-    };
-    const handleTouchMoveEvt = (e: React.TouchEvent) => {
-      handleTouchMove(e.touches[0].clientX);
-    };
-    const handleTouchEndEvt = () => {
-      startX.current = null;
-    };
+    const slide = slides[index];
 
     return (
       <section
-        ref={rootRef}
         className="relative h-full w-full overflow-hidden bg-black"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onTouchStart={handleTouchStartEvt}
-        onTouchMove={handleTouchMoveEvt}
-        onTouchEnd={handleTouchEndEvt}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       >
         <div className="absolute inset-0">
           <AnimatePresence
             initial={false}
-            custom={dir}
-            mode="popLayout"
             onExitComplete={() => {
               setIsAnimating(false);
               if (pendingRef.current != null) {
                 const i = pendingRef.current;
                 pendingRef.current = null;
-                jumpTo(i);
+                setIsAnimating(true);
+                setIndex(i);
               }
             }}
+            custom={dir}
           >
             <motion.div
               key={index}
@@ -254,25 +193,22 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
               exit="exit"
               style={{
                 willChange: "opacity, transform",
-                contain: "layout paint size",
+                transform: "translateZ(0)",
+                backfaceVisibility: "hidden",
               }}
             >
               <Image
-                src={slides[index].src}
+                src={slide.src}
                 className="object-cover"
-                alt={
-                  slides[index].alt ||
-                  slides[index].heading ||
-                  `Slide ${index + 1}`
-                }
+                alt={slide.alt || slide.heading || `Slide ${index + 1}`}
                 fill
                 priority={index === 0}
                 sizes="100vw"
-                placeholder={slides[index].blurDataURL ? "blur" : undefined}
-                blurDataURL={slides[index].blurDataURL || undefined}
+                placeholder={slide.blurDataURL ? "blur" : undefined}
+                blurDataURL={slide.blurDataURL || undefined}
               />
 
-              {/* preload next image */}
+              {/* Preload ảnh kế: opacity 0 để vẫn decode */}
               {slides[(index + 1) % count] ? (
                 <Image
                   src={slides[(index + 1) % count].src}
@@ -280,112 +216,113 @@ export const ForestSlider = forwardRef<ForestSliderHandle, Props>(
                   fill
                   sizes="100vw"
                   priority={false}
-                  style={{ visibility: "hidden", pointerEvents: "none" }}
+                  style={{ opacity: 0, pointerEvents: "none" }}
                   aria-hidden
                 />
               ) : null}
 
-              {/* headings */}
-              {slides[index].heading || slides[index].subheading ? (
+              {(slide.heading || slide.subheading) && (
                 <div className="absolute inset-x-0 top-[18%] z-20 mx-auto max-w-6xl px-6 text-white drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
-                  {slides[index].heading ? (
+                  {slide.heading && (
                     <motion.h2
                       className="text-5xl font-bold leading-tight md:text-7xl"
-                      initial={{ y: 40, opacity: 0 }}
+                      initial={{ y: 36, opacity: 0 }}
                       animate={{
                         y: 0,
                         opacity: 1,
-                        transition: { duration: 0.7, ease: easeCubic },
+                        transition: { duration: 0.6, ease: easeCubic },
                       }}
                       exit={{
-                        y: -40,
-                        opacity: 0,
-                        transition: { duration: 0.5, ease: easeCubic },
-                      }}
-                    >
-                      {slides[index].heading}
-                    </motion.h2>
-                  ) : null}
-
-                  {slides[index].subheading ? (
-                    <motion.p
-                      className="mt-3 max-w-xl text-base text-white/85 md:text-lg"
-                      initial={{ y: 24, opacity: 0 }}
-                      animate={{
-                        y: 0,
-                        opacity: 1,
-                        transition: {
-                          duration: 0.6,
-                          ease: easeCubic,
-                          delay: 0.05,
-                        },
-                      }}
-                      exit={{
-                        y: -24,
+                        y: -32,
                         opacity: 0,
                         transition: { duration: 0.45, ease: easeCubic },
                       }}
                     >
-                      {slides[index].subheading}
+                      {slide.heading}
+                    </motion.h2>
+                  )}
+                  {slide.subheading && (
+                    <motion.p
+                      className="mt-3 max-w-xl text-base text-white/85 md:text-lg"
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{
+                        y: 0,
+                        opacity: 1,
+                        transition: {
+                          duration: 0.5,
+                          ease: easeCubic,
+                          delay: 0.04,
+                        },
+                      }}
+                      exit={{
+                        y: -20,
+                        opacity: 0,
+                        transition: { duration: 0.4, ease: easeCubic },
+                      }}
+                    >
+                      {slide.subheading}
                     </motion.p>
-                  ) : null}
+                  )}
                 </div>
-              ) : null}
+              )}
 
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_60%_at_50%_40%,rgba(0,0,0,0)_0%,rgba(0,0,0,0)_55%,rgba(0,0,0,0.35)_100%)]" />
             </motion.div>
           </AnimatePresence>
         </div>
 
-        <div className="absolute inset-y-0 left-0 right-0 z-30 flex items-center justify-between px-3">
-          <button
-            onClick={prev}
-            disabled={isAnimating}
-            aria-label="Previous"
-            className="grid size-10 place-items-center rounded-full bg-black/30 text-white backdrop-blur-md transition hover:bg-black/50 disabled:opacity-40"
-          >
-            ‹
-          </button>
-          <button
-            onClick={next}
-            disabled={isAnimating}
-            aria-label="Next"
-            className="grid size-10 place-items-center rounded-full bg-black/30 text-white backdrop-blur-md transition hover:bg-black/50 disabled:opacity-40"
-          >
-            ›
-          </button>
-        </div>
-
-        <div className="absolute left-0 right-0 top-0 z-30 flex gap-2 px-4 py-3">
-          {slides.map((_, i) => (
+        {count > 1 && (
+          <div className="absolute inset-y-0 left-0 right-0 z-30 flex items-center justify-between px-3">
             <button
-              key={i}
-              onClick={() => {
-                if (i !== index) jumpTo(i);
-              }}
-              aria-label={`Go to slide ${i + 1}`}
-              className="group relative h-[3px] flex-1 overflow-hidden rounded bg-white/20"
+              onClick={prev}
               disabled={isAnimating}
+              aria-label="Previous"
+              className="grid size-10 place-items-center rounded-full bg-black/30 text-white backdrop-blur-md transition hover:bg-black/50 disabled:opacity-40"
             >
-              <span
-                key={i === index ? progressKey : `idle-${i}`}
-                className={`absolute inset-y-0 left-0 block ${
-                  i === index
-                    ? "bg-white"
-                    : "bg-white/40 group-hover:bg-white/60"
-                }`}
-                style={
-                  i === index && autoplay
-                    ? {
-                        width: "0%",
-                        animation: `progress ${intervalMs}ms linear forwards`,
-                      }
-                    : { width: i < index ? "100%" : "0%" }
-                }
-              />
+              ‹
             </button>
-          ))}
-        </div>
+            <button
+              onClick={next}
+              disabled={isAnimating}
+              aria-label="Next"
+              className="grid size-10 place-items-center rounded-full bg-black/30 text-white backdrop-blur-md transition hover:bg-black/50 disabled:opacity-40"
+            >
+              ›
+            </button>
+          </div>
+        )}
+
+        {count > 1 && (
+          <div className="absolute left-0 right-0 top-0 z-30 flex gap-2 px-4 py-3">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => i !== index && jumpTo(i)}
+                aria-label={`Go to slide ${i + 1}`}
+                className="group relative h-[3px] flex-1 overflow-hidden rounded bg-white/20"
+                disabled={isAnimating}
+              >
+                <span
+                  key={i === index ? progressKey : `idle-${i}`}
+                  className={`absolute inset-y-0 left-0 block ${
+                    i === index
+                      ? "bg-white"
+                      : "bg-white/40 group-hover:bg-white/60"
+                  }`}
+                  style={
+                    i === index && autoplay
+                      ? {
+                          width: "0%",
+                          animation: `progress ${intervalMs}ms linear forwards`,
+                          animationPlayState: running ? "running" : "paused",
+                        }
+                      : { width: i < index ? "100%" : "0%" }
+                  }
+                />
+              </button>
+            ))}
+          </div>
+        )}
 
         <style jsx global>{`
           @keyframes progress {
