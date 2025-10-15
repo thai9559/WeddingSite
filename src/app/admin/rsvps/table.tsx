@@ -41,8 +41,40 @@ function formatVNTime(iso: string) {
   }
 }
 
+/** Lấy filename từ header Content-Disposition (nếu server set) */
+function filenameFromHeaders(res: Response, fallback: string) {
+  const cd =
+    res.headers.get("Content-Disposition") ||
+    res.headers.get("content-disposition");
+  if (!cd) return fallback;
+  // support: filename="rsvps-xxx.xlsx" hoặc filename*=UTF-8''rsvps-xxx.xlsx
+  const m =
+    /filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i.exec(cd) ||
+    /filename="?([^"]+)"?/i.exec(cd);
+  return m ? decodeURIComponent(m[1]) : fallback;
+}
+
+async function downloadFromApi(url: string, fallbackName: string) {
+  const res = await fetch(url, { credentials: "same-origin" });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText);
+    throw new Error(msg || `Download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const name = filenameFromHeaders(res, fallbackName);
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(href);
+}
+
 export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
   const [q, setQ] = useState("");
+  const [downloading, setDownloading] = useState<"csv" | "xlsx" | null>(null);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -58,9 +90,29 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
     });
   }, [rows, q]);
 
-  const csvHref = `/api/rsvps/export?event=${encodeURIComponent(
-    rows[0]?.event_key || ""
-  )}`;
+  // ...
+  const eventKey = rows[0]?.event_key || "wedding-2025";
+  const buildExportUrl = (format: "csv" | "xlsx") => {
+    const params = new URLSearchParams({ event: eventKey });
+    if (q.trim()) params.set("q", q.trim());
+    if (format === "xlsx") params.set("format", "xlsx");
+    // ⬇️ Sửa từ /api/... thành /admin/rsvps/export
+    return `/admin/rsvps/export?${params.toString()}`;
+  };
+  // ...
+
+  const onDownload = async (format: "csv" | "xlsx") => {
+    try {
+      setDownloading(format);
+      const url = buildExportUrl(format);
+      const fallback = `rsvps-${eventKey}.${format}`;
+      await downloadFromApi(url, fallback);
+    } catch (e: any) {
+      alert(e?.message || "Xuất dữ liệu thất bại.");
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   return (
     <div className="rounded-2xl border overflow-hidden bg-white">
@@ -72,13 +124,15 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
           placeholder="Tìm theo tên, số điện thoại, quan hệ, ghi chú…"
           className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
         />
-        <div className="flex justify-end">
-          <a
-            href={csvHref}
-            className="px-3 py-2 rounded-xl bg-black text-white text-sm whitespace-nowrap"
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => onDownload("csv")}
+            disabled={downloading === "csv"}
+            className="px-3 py-2 rounded-xl bg-neutral-700 text-white text-sm whitespace-nowrap disabled:opacity-60"
+            title="Tải CSV (áp dụng bộ lọc hiện tại)"
           >
-            Tải CSV
-          </a>
+            {downloading === "csv" ? "Đang tải…" : "Tải CSV"}
+          </button>
         </div>
       </div>
 
@@ -92,7 +146,7 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
           <ul className="divide-y">
             {filtered.map((r, i) => (
               <li key={r.id} className="p-4 space-y-3">
-                {/* Top row: STT left – relation badge right */}
+                {/* Top row */}
                 <div className="flex items-start justify-between">
                   <div className="text-sm text-neutral-500">#{i + 1}</div>
                   <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs">
@@ -102,7 +156,7 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
                   </div>
                 </div>
 
-                {/* Row: Tên – SĐT – Thời gian (3 cột ngang) */}
+                {/* 3 cột */}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="min-w-0">
                     <div className="text-xs text-neutral-500">Tên</div>
@@ -133,7 +187,7 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
                   </div>
                 </div>
 
-                {/* Column: Lời nhắn (dọc) */}
+                {/* Lời nhắn */}
                 {r.message && (
                   <div>
                     <div className="text-xs text-neutral-500">Lời nhắn</div>
