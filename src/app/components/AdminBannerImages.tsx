@@ -37,7 +37,7 @@ export type BannerImage = {
 
 type Props = {
   images: BannerImage[];
-  onDelete: (img: BannerImage) => void;
+  onDelete: (img: BannerImage) => Promise<void> | void;
   deletingId: number | null;
 };
 
@@ -59,6 +59,20 @@ async function createSignedUrl(
   return data.signedUrl;
 }
 
+/** Nhận biết mobile/touch (pointer: coarse hoặc < md) */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(pointer: coarse), (max-width: 767px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return isMobile;
+}
+
 /* -------------------- component -------------------- */
 export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
   const [preview, setPreview] = React.useState<BannerImage | null>(null);
@@ -69,6 +83,9 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
   const [triedSigned, setTriedSigned] = React.useState<Record<number, boolean>>(
     {}
   );
+  // mobile: ảnh đang bật overlay nút
+  const [activeId, setActiveId] = React.useState<number | null>(null);
+  const isMobile = useIsMobile();
 
   // reset mỗi khi danh sách ảnh đổi
   React.useEffect(() => {
@@ -76,6 +93,7 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
     for (const img of images) init[img.id] = img.url;
     setSrcMap(init);
     setTriedSigned({});
+    setActiveId(null);
   }, [images]);
 
   // fallback: khi ảnh public 403/404 -> xin signed URL rồi cập nhật src
@@ -103,64 +121,130 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
       <ul className="mt-6 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
         {images.map((img) => {
           const currentSrc = srcMap[img.id] ?? img.url;
+          const isActiveMobile = isMobile && activeId === img.id;
+
           return (
             <li
               key={`${img.id}-${img.path}`}
-              className="group relative overflow-hidden rounded border bg-white"
+              className="group relative overflow-hidden rounded border border-neutral-200 bg-white"
             >
-              <Image
-                src={currentSrc}
-                alt={`banner ${img.id}`}
-                width={800}
-                height={600}
-                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                className="aspect-[4/3] w-full cursor-zoom-in object-cover"
-                onClick={() => setPreview(img)}
-                onError={() => handleImgError(img)}
-                // Admin: tắt tối ưu để khỏi cần cấu hình domains ngay
-                unoptimized
-                priority={false}
-              />
+              <div className="relative aspect-[4/3] w-full">
+                <Image
+                  src={currentSrc}
+                  alt={`banner ${img.id}`}
+                  fill
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  className="cursor-zoom-in object-cover"
+                  onClick={() => {
+                    if (isMobile) {
+                      setActiveId((prev) => (prev === img.id ? null : img.id));
+                    } else {
+                      setPreview(img);
+                    }
+                  }}
+                  onError={() => handleImgError(img)}
+                  // Admin: tắt tối ưu để khỏi cần cấu hình domains ngay
+                  unoptimized
+                  priority={false}
+                />
 
-              <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition group-hover:opacity-100">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setPreview(img)}
+                {/* Overlay trung tâm
+                    - Desktop (md+): hiện khi hover; click được khi hover
+                    - Mobile: hiện khi user tap (activeId === img.id) */}
+                <div
+                  className={[
+                    "absolute inset-0 flex items-center justify-center transition",
+                    // Desktop hover
+                    "md:bg-black/0 md:opacity-0 md:group-hover:bg-black/20 md:group-hover:opacity-100",
+                    "md:pointer-events-none md:group-hover:pointer-events-auto",
+                    // Mobile toggle
+                    isActiveMobile
+                      ? "bg-black/30 opacity-100 pointer-events-auto"
+                      : "bg-black/0 opacity-0 pointer-events-none",
+                  ].join(" ")}
+                  onClick={() => {
+                    // bấm nền overlay để đóng ở mobile
+                    if (isActiveMobile) setActiveId(null);
+                  }}
                 >
-                  Xem ảnh
-                </Button>
-              </div>
-
-              {/* Nút xoá */}
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={deletingId === img.id}
-                    className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100"
-                    title="Xoá ảnh khỏi Storage"
+                  <div
+                    className="flex items-center gap-2"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    {deletingId === img.id ? "Đang xoá…" : "Xoá"}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Xác nhận xoá ảnh?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Ảnh sẽ bị xoá khỏi Storage. Hành động này không thể hoàn
-                      tác.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Huỷ</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => onDelete(img)}>
-                      Xoá
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setActiveId(null);
+                        setPreview(img);
+                      }}
+                    >
+                      Xem ảnh
+                    </Button>
+
+                    {/* Nút Xoá chỉ hiện trong overlay ở MOBILE */}
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={deletingId === img.id}
+                          title="Xoá ảnh khỏi Storage"
+                          onClick={() => setActiveId(null)}
+                          className="md:hidden"
+                        >
+                          {deletingId === img.id ? "Đang xoá…" : "Xoá"}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Xác nhận xoá ảnh?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Ảnh sẽ bị xoá khỏi Storage. Hành động này không thể
+                            hoàn tác.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Huỷ</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => onDelete(img)}>
+                            Xoá
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+
+                {/* Nút xoá góc phải: CHỈ PC (md+) & hiện khi hover */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={deletingId === img.id}
+                      className="absolute right-2 top-2 hidden opacity-0 transition md:block md:group-hover:opacity-100"
+                      title="Xoá ảnh khỏi Storage"
+                    >
+                      {deletingId === img.id ? "Đang xoá…" : "Xoá"}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Xác nhận xoá ảnh?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Ảnh sẽ bị xoá khỏi Storage. Hành động này không thể hoàn
+                        tác.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Huỷ</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => onDelete(img)}>
+                        Xoá
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </li>
           );
         })}
@@ -170,7 +254,7 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
       <Dialog
         open={!!preview}
         onOpenChange={(open) => {
-          if (!open) setPreview(null); // chỉ clear khi đóng
+          if (!open) setPreview(null);
         }}
       >
         <DialogContent className="max-w-[90vw] bg-white p-0 sm:max-w-3xl">

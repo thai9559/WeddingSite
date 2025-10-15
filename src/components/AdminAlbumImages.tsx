@@ -105,7 +105,6 @@ export const AdminAlbumImages: FC<Props> = ({
                     }
                   }}
                   onError={() => setErrorMap((m) => ({ ...m, [img.id]: true }))}
-                  // Trang admin: không cần tối ưu CDN ngay, tránh phải cấu hình domains
                   unoptimized
                   priority={false}
                 />
@@ -116,24 +115,28 @@ export const AdminAlbumImages: FC<Props> = ({
                   </div>
                 )}
 
+                {/* Overlay trung tâm:
+                    - Desktop (md+): ẩn mặc định, hiện khi hover; cho phép click khi hover
+                    - Mobile: hiện khi user tap (activeId === img.id) */}
                 <div
                   className={[
                     "absolute inset-0 flex items-center justify-center transition",
-                    // Desktop (md+): ẩn mặc định, hiện khi hover
-                    "md:pointer-events-none md:bg-black/0 md:opacity-0 md:group-hover:bg-black/20 md:group-hover:opacity-100",
-                    // Mobile: hiện khi active, ẩn khi không active
+                    "md:bg-black/0 md:opacity-0 md:group-hover:bg-black/20 md:group-hover:opacity-100",
+                    // pointer-events ở PC: tắt mặc định, bật khi hover
+                    "md:pointer-events-none md:group-hover:pointer-events-auto",
+                    // Mobile: bật/tắt theo trạng thái
                     isActiveMobile
                       ? "bg-black/30 opacity-100 pointer-events-auto"
                       : "bg-black/0 opacity-0 pointer-events-none",
                   ].join(" ")}
-                  // Bấm nền overlay (mobile) để tắt overlay
                   onClick={() => {
+                    // bấm nền overlay để đóng ở mobile
                     if (isActiveMobile) setActiveId(null);
                   }}
                 >
                   <div
                     className="flex items-center gap-2"
-                    onClick={(e) => e.stopPropagation()} // không tắt overlay khi bấm nút
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <Button
                       variant="secondary"
@@ -146,7 +149,7 @@ export const AdminAlbumImages: FC<Props> = ({
                       Xem ảnh
                     </Button>
 
-                    {/* Nút xoá trong overlay (mobile & desktop đều dùng được) */}
+                    {/* Nút Xoá chỉ hiện trong overlay ở MOBILE */}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button
@@ -155,6 +158,7 @@ export const AdminAlbumImages: FC<Props> = ({
                           disabled={deletingId === img.id}
                           title="Xoá ảnh khỏi Storage và DB"
                           onClick={() => setActiveId(null)}
+                          className="md:hidden"
                         >
                           {deletingId === img.id ? "Đang xoá…" : "Xoá"}
                         </Button>
@@ -194,7 +198,7 @@ export const AdminAlbumImages: FC<Props> = ({
                   </div>
                 </div>
 
-                {/* Nút xoá góc phải: chỉ hiện trên PC (md+) khi hover, giữ UI cũ */}
+                {/* Nút xoá góc phải: CHỈ PC (md+) & hiện khi hover */}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
@@ -244,6 +248,7 @@ export const AdminAlbumImages: FC<Props> = ({
         })}
       </ul>
 
+      {/* Modal xem ảnh */}
       <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
         <DialogContent className="max-w-[90vw] bg-white p-0 sm:max-w-3xl">
           <DialogHeader className="px-4 pt-4">
