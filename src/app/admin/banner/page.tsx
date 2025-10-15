@@ -1,349 +1,284 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import { uploadBannerAction } from "./action";
 import { toast } from "sonner";
 import { AdminBannerImages } from "@/app/components/AdminBannerImages";
-import type { BannerImage } from "@/app/components/AdminBannerImages";
-import { fileToWebp } from "@/app/lib/img-webp";
+import type { BannerImage as UIBannerImage } from "@/app/components/AdminBannerImages";
 
-export type BannerLocation = { id: number; key: string; name: string };
+/* ========= TYPES ========= */
 type Device = "pc" | "mobile";
+type BannerImageRow = {
+  id: number;
+  path: string;
+  location: string;
+  device: Device;
+};
+type BannerImage = BannerImageRow & { url: string };
+export type BannerLocation = { id: number; key: string; name: string };
 
+/* ========= CONSTS ========= */
 const BUCKET = "wedding";
 const IS_PRIVATE_BUCKET = false;
 
-/* -------------------- Helper -------------------- */
+const LOCATIONS: BannerLocation[] = [
+  { id: 1, key: "hero", name: "Hero Banner" },
+  { id: 2, key: "moment", name: "Moment" },
+];
 
-// Chuẩn hoá string → Device
-function asDevice(v: string): Device {
-  return v === "mobile" ? "mobile" : "pc";
+/* ========= HELPERS ========= */
+function buildPrefix(location: string, device: Device) {
+  return `banners/${location}/${device}`;
 }
 
-// preset theo device
-function getPresetByDevice(device: Device) {
-  if (device === "mobile") {
-    return {
-      maxWidth: 1280,
-      maxHeight: 1280,
-      targetBytes: 450_000, // ~450KB
-      quality: 0.82,
-      minQuality: 0.6,
-    };
-  }
-  return {
-    maxWidth: 2560,
-    maxHeight: 1440,
-    targetBytes: 700_000, // ~700KB
-    quality: 0.85,
-    minQuality: 0.6,
-  };
-}
-
-async function getPublicUrl(path: string): Promise<string> {
-  const supabase = supabaseBrowser(); // ✅ client chỉ gọi ở browser
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return data.publicUrl;
-}
-
-async function getUrlFromPath(path: string): Promise<string> {
+async function getUrl(path: string) {
   const supabase = supabaseBrowser();
-  if (!IS_PRIVATE_BUCKET) return getPublicUrl(path);
-
+  if (!IS_PRIVATE_BUCKET) {
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  }
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(path, 60 * 10); // URL sống 10 phút
-
-  if (error || !data?.signedUrl) {
-    console.error("❌ Lỗi tạo signed URL:", error);
-    throw error ?? new Error("Không tạo được signed URL");
-  }
-
+    .createSignedUrl(path, 60 * 60);
+  if (error) throw error;
   return data.signedUrl;
 }
 
-// fallback nếu DB cũ lưu full URL thay vì path
-function extractPathFromUrl(u: string) {
-  const m = u?.match(/\/object\/(public|sign)\/wedding\/(.+)$/);
-  return m?.[2] || "";
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return "Đã xảy ra lỗi không xác định";
-  }
-}
-
-/* -------------------- Types cho kết quả upload -------------------- */
-type UploadDetailError = { name: string; path?: string; message: string };
-type UploadResult = {
-  uploaded: number;
-  attemptPaths?: string[];
-  detail?: { errors?: UploadDetailError[] };
-};
-
-/* -------------------- Component -------------------- */
-
-export default function AdminUploadBannerPage() {
-  const selectedLocation = "hero"; // cố định
+/* ========= PAGE ========= */
+export default function Page() {
   const [device, setDevice] = useState<Device>("pc");
-  const [files, setFiles] = useState<File[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<string>("");
-
+  const [location, setLocation] = useState<BannerLocation>(LOCATIONS[0]);
+  const [loadingImages, setLoadingImages] = useState<boolean>(false);
   const [bannerImages, setBannerImages] = useState<BannerImage[]>([]);
-  const [loadingImages, setLoadingImages] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  // load list ảnh theo location + device
-  const fetchBannerImages = useCallback(
-    async (location: string, dvInput: Device | string) => {
-      setLoadingImages(true);
-      try {
-        const supabase = supabaseBrowser();
-        const dv = asDevice(String(dvInput));
+  const supabase = useMemo(() => supabaseBrowser(), []);
 
-        const { data, error } = await supabase
-          .from("banner_images")
-          .select("id, path, url, location, device")
-          .eq("location", location)
-          .eq("device", dv)
-          .order("id", { ascending: true });
+  const fetchFromDB = useCallback(
+    async (loc: string, dv: Device): Promise<BannerImage[]> => {
+      const { data, error } = await supabase
+        .from("banner_images")
+        .select("id, path, location, device")
+        .eq("location", loc)
+        .eq("device", dv)
+        .not("path", "is", null) // new
+        .neq("path", "") // new
+        .order("id", { ascending: false });
 
-        if (error) throw error;
+      if (error) throw error;
 
-        type Row = {
-          id: number;
-          path: string | null;
-          url: string | null;
-          location: string;
-          device: string | null;
-        };
+      const rows: BannerImageRow[] = (data ?? []).map((r: any) => ({
+        id: r.id,
+        path: r.path,
+        location: r.location,
+        device: (r.device as Device) || dv,
+      }));
 
-        const items = (data ?? []) as Row[];
+      const mapped: BannerImage[] = await Promise.all(
+        rows.map(async (r) => ({ ...r, url: await getUrl(r.path) }))
+      );
 
-        const resolved = await Promise.all(
-          items.map(async (row) => {
-            const path = row.path ?? extractPathFromUrl(row.url ?? "");
-            if (!path) return null;
-
-            const url = await getUrlFromPath(path);
-            const dvNarrow = asDevice(String(row.device ?? ""));
-
-            const item: BannerImage = {
-              id: row.id,
-              path,
-              device: dvNarrow,
-              location: row.location,
-              url,
-            };
-            return item;
-          })
-        );
-
-        setBannerImages(resolved.filter((x): x is BannerImage => x !== null));
-      } catch (e: unknown) {
-        toast.error("Lỗi khi load ảnh", { description: errorMessage(e) });
-        setBannerImages([]);
-      } finally {
-        setLoadingImages(false);
-      }
+      return mapped;
     },
-    []
+    [supabase]
   );
 
-  useEffect(() => {
-    if (selectedLocation && device) fetchBannerImages(selectedLocation, device);
-    else setBannerImages([]);
-  }, [selectedLocation, device, result, fetchBannerImages]);
-
-  // xoá 1 ảnh (Storage + DB)
-  async function handleDeleteOne(img: BannerImage) {
-    setDeletingId(img.id);
-    try {
-      const supabase = supabaseBrowser();
-
-      // Xóa file khỏi Supabase Storage
-      const { error: storageError } = await supabase.storage
+  const fetchFromStorage = useCallback(
+    async (loc: string, dv: Device): Promise<BannerImage[]> => {
+      const prefix = buildPrefix(loc, dv);
+      const { data, error } = await supabase.storage
         .from(BUCKET)
-        .remove([img.path]);
-      if (storageError) throw storageError;
+        .list(prefix, { limit: 100, sortBy: { column: "name", order: "asc" } });
 
-      // Xóa bản ghi trong database
-      const { error: dbError } = await supabase
-        .from("banner_images")
-        .delete()
-        .eq("id", img.id);
-      if (dbError) throw dbError;
+      if (error) throw error;
 
-      toast.success("Đã xoá ảnh banner");
-      await fetchBannerImages(img.location, img.device);
-    } catch (e: unknown) {
-      toast.error("Lỗi xoá ảnh", { description: errorMessage(e) });
+      const files = (data ?? []).filter(
+        (f) => !!f.name && !f.name.endsWith("/")
+      );
+
+      const mapped: BannerImage[] = await Promise.all(
+        files.map(async (f, idx) => {
+          const path = `${prefix}/${f.name}`;
+          return {
+            id: -(idx + 1),
+            path,
+            location: loc,
+            device: dv,
+            url: await getUrl(path),
+          };
+        })
+      );
+
+      return mapped;
+    },
+    [supabase]
+  );
+
+  const loadImages = useCallback(async () => {
+    setLoadingImages(true);
+    try {
+      let imgs = await fetchFromDB(location.key, device);
+      if (!imgs.length) imgs = await fetchFromStorage(location.key, device);
+      setBannerImages(imgs);
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || "Lỗi tải ảnh");
     } finally {
-      setDeletingId(null);
+      setLoadingImages(false);
     }
-  }
+  }, [device, location.key, fetchFromDB, fetchFromStorage]);
 
-  // khi chọn file: nén/resize sang WebP
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const inputFiles = Array.from(e.target.files ?? []);
-    if (!inputFiles.length) {
-      setFiles([]);
-      return;
-    }
+  useEffect(() => {
+    loadImages();
+  }, [loadImages]);
 
-    const MAX_INPUT_BYTES = 15 * 1024 * 1024; // 15MB
-    const filtered = inputFiles.filter((f) => f.size <= MAX_INPUT_BYTES);
-    if (filtered.length < inputFiles.length) {
-      toast.info("Một số file > 15MB đã bị bỏ qua để đảm bảo hiệu năng.");
-    }
+  const handleUpload = useCallback(
+    async (ev: React.FormEvent<HTMLFormElement>) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.currentTarget);
+      fd.set("location", location.key);
+      fd.set("device", device);
 
-    const preset = getPresetByDevice(device);
-    const processed: File[] = [];
-
-    for (const f of filtered) {
-      try {
-        const webp = await fileToWebp(f, preset);
-        processed.push(webp);
-      } catch (err: unknown) {
-        toast.error(`Không nén được ảnh: ${f.name}`, {
-          description: errorMessage(err),
+      const res = await uploadBannerAction(fd);
+      if (!res.ok) {
+        toast.error("Upload có lỗi", {
+          description: JSON.stringify(res.detail?.errors || [], null, 2),
         });
+      } else {
+        toast.success(`Đã upload ${res.uploaded} ảnh`);
       }
-    }
+      await loadImages();
+      ev.currentTarget.reset();
+    },
+    [device, location.key, loadImages]
+  );
 
-    setFiles(processed);
-  };
+  const handleDeleteOne = useCallback(
+    async (img: UIBannerImage) => {
+      try {
+        setDeletingId(img.id);
+
+        // helper nhỏ để nhận diện lỗi 404 từ Supabase Storage
+        const is404 = (err: unknown): boolean =>
+          typeof err === "object" &&
+          err !== null &&
+          "statusCode" in (err as any) &&
+          (err as any).statusCode === 404;
+
+        // 1) Xoá file trên Storage (nếu có path). Bỏ qua lỗi 404.
+        let storageErr: any = null;
+        if (img.path) {
+          const { error } = await supabase.storage
+            .from(BUCKET)
+            .remove([img.path]);
+          if (error && !is404(error)) {
+            storageErr = error; // ghi nhận lỗi khác 404, vẫn tiếp tục xoá DB
+          }
+        }
+
+        // 2) Xoá bản ghi DB nếu là record thật (id > 0)
+        let dbErr: any = null;
+        if (img.id > 0) {
+          const { error } = await supabase
+            .from("banner_images")
+            .delete()
+            .eq("id", img.id);
+          if (error) dbErr = error;
+        }
+
+        if (storageErr || dbErr) {
+          toast.error("Một phần xoá bị lỗi", {
+            description: JSON.stringify(
+              { storage: storageErr?.message, db: dbErr?.message },
+              null,
+              2
+            ),
+          });
+        } else {
+          toast.success("Đã xoá");
+        }
+
+        await loadImages();
+      } catch (e: any) {
+        console.error(e);
+        toast.error(e?.message || "Xoá thất bại");
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [supabase, loadImages]
+  );
 
   return (
-    <main className="mx-auto max-w-5xl p-6">
-      <h1 className="text-2xl font-semibold">Admin · Upload ảnh banner</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Chọn vị trí (location), thiết bị (pc/mobile), rồi upload.
-      </p>
+    <main className="mx-auto max-w-6xl space-y-8 p-6">
+      <h1 className="text-2xl font-bold">Upload Banner</h1>
 
-      <form
-        className="mt-6 space-y-5"
-        action={async (formData: FormData) => {
-          try {
-            setBusy(true);
-            if (!selectedLocation)
-              throw new Error("Bạn chưa chọn vị trí banner.");
+      {/* Filters */}
+      <section className="flex flex-wrap items-center gap-3">
+        <label className="text-sm font-medium">Location</label>
+        <select
+          className="rounded border px-3 py-2"
+          value={location.key}
+          onChange={(e) => {
+            const next =
+              LOCATIONS.find((x) => x.key === e.target.value) || LOCATIONS[0];
+            setLocation(next);
+          }}
+        >
+          {LOCATIONS.map((it) => (
+            <option key={it.id} value={it.key}>
+              {it.name}
+            </option>
+          ))}
+        </select>
 
-            // ⚠️ Không append trùng: đã có name="location" & name="device" trong form
-            // formData.append("location", selectedLocation);
-            // formData.append("device", device);
-            files.forEach((f) => formData.append("files", f));
+        <label className="ml-4 text-sm font-medium">Thiết bị</label>
+        <select
+          className="rounded border px-3 py-2"
+          value={device}
+          onChange={(e) => setDevice(e.target.value as Device)}
+        >
+          <option value="pc">PC</option>
+          <option value="mobile">Mobile</option>
+        </select>
 
-            const res = (await uploadBannerAction(formData)) as
-              | UploadResult
-              | undefined;
+        <button
+          type="button"
+          className="ml-2 rounded border px-3 py-2"
+          onClick={loadImages}
+        >
+          Reload
+        </button>
+      </section>
 
-            console.group("[UploadBannerAction] Debug");
-            console.log("attemptPaths:", res?.attemptPaths);
-            console.log("detail:", res?.detail);
-            console.groupEnd();
-
-            const errs = res?.detail?.errors ?? [];
-            if (errs.length) {
-              toast.error("Một số ảnh upload thất bại", {
-                description: errs
-                  .map(
-                    (e) =>
-                      `${e.name}${e.path ? ` → ${e.path}` : ""}: ${e.message}`
-                  )
-                  .join("\n"),
-              });
-            }
-
-            const uploaded = res?.uploaded ?? 0;
-            setResult(`✅ Upload: ${uploaded}/${files.length}
-→ Thư mục: banners/${selectedLocation}/${device}
-→ Attempt: ${(res?.attemptPaths || []).join(", ")}`);
-
-            setFiles([]);
-            toast.success("Đã upload banner", {
-              description: `Tải lên ${uploaded} ảnh.`,
-            });
-          } catch (e: unknown) {
-            const msg = errorMessage(e);
-            setResult("❌ Lỗi: " + msg);
-            toast.error("Upload thất bại", {
-              description: msg,
-            });
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {/* Vị trí cố định: hero */}
-        <div>
-          <label className="text-xs font-medium">Vị trí (location)</label>
+      {/* Upload form */}
+      <section>
+        <form
+          onSubmit={handleUpload}
+          className="flex flex-col gap-3 rounded border p-4"
+        >
+          <input type="hidden" name="location" value={location.key} />
+          <input type="hidden" name="device" value={device} />
           <input
-            type="text"
-            name="location"
-            value="hero"
-            readOnly
-            className="mt-1 w-full outline-none rounded border p-2 bg-neutral-50 text-neutral-600"
-          />
-        </div>
-
-        {/* Thiết bị */}
-        <div>
-          <label className="text-xs font-medium">Thiết bị</label>
-          <select
-            name="device"
-            value={device}
-            onChange={(e) => setDevice(asDevice(e.target.value))}
-            className="mt-1 w-full rounded border p-2"
-            required
-          >
-            <option value="pc">PC</option>
-            <option value="mobile">Mobile</option>
-          </select>
-        </div>
-
-        {/* Upload */}
-        <div>
-          <label className="text-xs font-medium">Ảnh banner</label>
-          <input
+            name="files"
             type="file"
             accept="image/*"
             multiple
-            onChange={handleFileChange}
-            className="mt-1 w-full rounded border p-2"
-            required
+            className="cursor-pointer"
           />
-          <div className="mt-2 text-xs text-neutral-500">
-            {files.length
-              ? `${files.length} ảnh đã chọn (đã nén sang WebP trước khi upload)`
-              : "Chưa chọn ảnh"}
-          </div>
-        </div>
+          <button
+            type="submit"
+            className="rounded bg-black px-4 py-2 text-white hover:opacity-90"
+          >
+            Upload ảnh
+          </button>
+        </form>
+      </section>
 
-        <button
-          disabled={busy}
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-        >
-          {busy ? "Đang upload…" : "Upload"}
-        </button>
-
-        {result && (
-          <pre className="rounded border mt-3 p-3 text-xs whitespace-pre-wrap">
-            {result}
-          </pre>
-        )}
-      </form>
-
-      {/* List ảnh */}
-      <section className="mt-10">
+      {/* List */}
+      <section className="space-y-3">
         <h2 className="text-lg font-semibold">Ảnh đã upload</h2>
         {loadingImages ? (
           <p className="text-sm text-neutral-500">Đang tải ảnh…</p>

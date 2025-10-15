@@ -1,3 +1,4 @@
+// app/components/AdminBannerImages.tsx
 "use client";
 
 import * as React from "react";
@@ -23,11 +24,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 
+/* -------------------- types -------------------- */
+type Device = "pc" | "mobile";
+
 export type BannerImage = {
   id: number;
-  path: string; // path trong bucket (ví dụ: banners/home/pc/xxx.jpg)
+  path: string; // path trong bucket (ví dụ: banners/hero/pc/xxx.jpg)
   url: string; // URL build từ path (public trước)
-  device: string;
+  device: Device;
   location: string;
 };
 
@@ -39,28 +43,27 @@ type Props = {
 
 const BUCKET = "wedding";
 
+/* -------------------- helpers -------------------- */
 // tạo signed URL khi public URL fail
 async function createSignedUrl(
   path: string,
   expires = 60 * 10
 ): Promise<string> {
-  const supabase = supabaseBrowser(); // ✅ gọi hàm để lấy client
-
+  const supabase = supabaseBrowser();
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .createSignedUrl(path, expires);
-
   if (error || !data?.signedUrl) {
     throw error ?? new Error("Không tạo được signed URL");
   }
-
   return data.signedUrl;
 }
 
+/* -------------------- component -------------------- */
 export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
   const [preview, setPreview] = React.useState<BannerImage | null>(null);
 
-  // map hiện tại id -> src (public hoặc signed nếu đã fallback)
+  // id -> src (public hoặc signed nếu đã fallback)
   const [srcMap, setSrcMap] = React.useState<Record<number, string>>({});
   // đánh dấu đã thử signed cho ảnh nào để tránh loop vô hạn
   const [triedSigned, setTriedSigned] = React.useState<Record<number, boolean>>(
@@ -70,15 +73,14 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
   // reset mỗi khi danh sách ảnh đổi
   React.useEffect(() => {
     const init: Record<number, string> = {};
-    images.forEach((img) => (init[img.id] = img.url));
+    for (const img of images) init[img.id] = img.url;
     setSrcMap(init);
     setTriedSigned({});
   }, [images]);
 
   // fallback: khi ảnh public 403/404 -> xin signed URL rồi cập nhật src
   async function handleImgError(img: BannerImage) {
-    if (!img?.path) return;
-    if (triedSigned[img.id]) return; // đã cố signed rồi thì thôi
+    if (!img?.path || triedSigned[img.id]) return;
     try {
       const signed = await createSignedUrl(img.path);
       setSrcMap((m) => ({ ...m, [img.id]: signed }));
@@ -88,12 +90,13 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
     }
   }
 
-  if (!images.length)
+  if (!images.length) {
     return (
-      <p className="text-sm text-neutral-500 mt-3">
+      <p className="mt-3 text-sm text-neutral-500">
         Chưa có ảnh cho vị trí/thiết bị này.
       </p>
     );
+  }
 
   return (
     <>
@@ -102,24 +105,24 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
           const currentSrc = srcMap[img.id] ?? img.url;
           return (
             <li
-              key={img.id}
+              key={`${img.id}-${img.path}`}
               className="group relative overflow-hidden rounded border bg-white"
             >
               <Image
                 src={currentSrc}
                 alt={`banner ${img.id}`}
-                // Kích thước cơ sở (giữ tỉ lệ 4:3 bằng class)
                 width={800}
                 height={600}
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                className="aspect-[4/3] w-full object-cover cursor-zoom-in"
+                className="aspect-[4/3] w-full cursor-zoom-in object-cover"
                 onClick={() => setPreview(img)}
                 onError={() => handleImgError(img)}
                 // Admin: tắt tối ưu để khỏi cần cấu hình domains ngay
                 unoptimized
                 priority={false}
               />
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/30 transition">
+
+              <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition group-hover:opacity-100">
                 <Button
                   variant="secondary"
                   size="sm"
@@ -164,7 +167,12 @@ export function AdminBannerImages({ images, onDelete, deletingId }: Props) {
       </ul>
 
       {/* Preview dialog – dùng srcMap để đảm bảo đã fallback signed nếu cần */}
-      <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
+      <Dialog
+        open={!!preview}
+        onOpenChange={(open) => {
+          if (!open) setPreview(null); // chỉ clear khi đóng
+        }}
+      >
         <DialogContent className="max-w-[90vw] bg-white p-0 sm:max-w-3xl">
           <DialogHeader className="px-4 pt-4">
             <DialogTitle>Xem ảnh banner</DialogTitle>
