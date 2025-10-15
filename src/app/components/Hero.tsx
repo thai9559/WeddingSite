@@ -27,7 +27,6 @@ async function getUrl(path: string): Promise<string> {
   const { data, error } = await supabaseBrowser()
     .storage.from(BUCKET)
     .createSignedUrl(path, 600); // 10 phút
-
   if (error || !data?.signedUrl) {
     throw error ?? new Error("Không tạo signed URL");
   }
@@ -48,10 +47,8 @@ async function listFiles(prefix: string): Promise<string[]> {
 
   return (
     (data ?? [])
-      // chỉ file (folder có id = null)
-      .filter(
-        (f) => typeof f?.name === "string" && (f as { id?: string | null }).id
-      )
+      // chỉ file (folder có name nhưng không có trailing slash)
+      .filter((f) => typeof f?.name === "string")
       .map((f) => `${cleanPrefix}/${f.name}`)
       .filter((p) => IMG_EXT.test(p))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
@@ -146,20 +143,30 @@ export function Hero() {
     setReady(true);
     loadSlides(init);
 
-    const onChange = () => {
+    // type cho Safari cũ
+    type LegacyMQL = MediaQueryList & {
+      addListener?: (listener: (ev: MediaQueryListEvent) => void) => void;
+      removeListener?: (listener: (ev: MediaQueryListEvent) => void) => void;
+    };
+
+    const onChange = (_ev?: MediaQueryListEvent) => {
       const dv = pick();
       setDevice(dv);
       loadSlides(dv);
     };
 
-    mql.addEventListener?.("change", onChange);
-    // @ts-ignore - Safari cũ
-    mql.addListener?.(onChange);
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", onChange);
+    } else if (typeof (mql as LegacyMQL).addListener === "function") {
+      (mql as LegacyMQL).addListener!(onChange);
+    }
 
     return () => {
-      mql.removeEventListener?.("change", onChange);
-      // @ts-ignore
-      mql.removeListener?.(onChange);
+      if (typeof mql.removeEventListener === "function") {
+        mql.removeEventListener("change", onChange);
+      } else if (typeof (mql as LegacyMQL).removeListener === "function") {
+        (mql as LegacyMQL).removeListener!(onChange);
+      }
       reqIdRef.current++;
     };
   }, [loadSlides]);
