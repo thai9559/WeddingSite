@@ -22,10 +22,14 @@ export type BannerLocation = { id: number; key: string; name: string };
 /* ========= CONSTS ========= */
 const BUCKET = "wedding";
 const IS_PRIVATE_BUCKET = false;
+const RESERVED_NAMES = new Set([
+  ".emptyfolderplaceholder",
+  ".ds_store",
+  "thumbs.db",
+]);
 
 const LOCATIONS: BannerLocation[] = [
   { id: 1, key: "hero", name: "Hero Banner" },
-  { id: 2, key: "moment", name: "Moment" },
 ];
 
 /* ========= HELPERS ========= */
@@ -63,8 +67,9 @@ export default function Page() {
         .select("id, path, location, device")
         .eq("location", loc)
         .eq("device", dv)
-        .not("path", "is", null) // new
-        .neq("path", "") // new
+        .not("path", "is", null)
+        .neq("path", "")
+        .not("path", "like", "%/.%")
         .order("id", { ascending: false });
 
       if (error) throw error;
@@ -95,7 +100,11 @@ export default function Page() {
       if (error) throw error;
 
       const files = (data ?? []).filter(
-        (f) => !!f.name && !f.name.endsWith("/")
+        (f) =>
+          !!f.name &&
+          !f.name.endsWith("/") &&
+          !f.name.startsWith(".") &&
+          !RESERVED_NAMES.has(f.name.toLowerCase())
       );
 
       const mapped: BannerImage[] = await Promise.all(
@@ -115,12 +124,55 @@ export default function Page() {
     },
     [supabase]
   );
+  // Kiểm tra file có tồn tại trên Storage hay không (public/private đều OK)
+  const fileExists = async (path: string, supabase = supabaseBrowser()) => {
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(path, 60);
+    return !!data?.signedUrl && !error;
+  };
+
+  // Lọc ra các ảnh còn tồn tại; ảnh nào mất file thì xóa DB (nếu id > 0)
+  const pruneMissingFromDB = async (
+    rows: BannerImage[],
+    supabase = supabaseBrowser()
+  ) => {
+    const checks = await Promise.all(
+      rows.map(async (r) => ({
+        r,
+        ok: await fileExists(r.path, supabase).catch(() => false),
+      }))
+    );
+
+    const toKeep = checks.filter((c) => c.ok).map((c) => c.r);
+    const toDeleteIds = checks
+      .filter((c) => !c.ok && c.r.id > 0)
+      .map((c) => c.r.id);
+
+    if (toDeleteIds.length) {
+      // xóa hàng loạt các record “ma”
+      await supabase.from("banner_images").delete().in("id", toDeleteIds);
+    }
+
+    return toKeep;
+  };
 
   const loadImages = useCallback(async () => {
     setLoadingImages(true);
     try {
+      // 1) Ưu tiên DB
       let imgs = await fetchFromDB(location.key, device);
-      if (!imgs.length) imgs = await fetchFromStorage(location.key, device);
+
+      // 1.1) Dọn các record DB trỏ tới file đã bị xóa trong Storage
+      if (imgs.length) {
+        imgs = await pruneMissingFromDB(imgs, supabase);
+      }
+
+      // 2) Nếu sau khi dọn vẫn không còn gì → fallback từ Storage
+      if (!imgs.length) {
+        imgs = await fetchFromStorage(location.key, device);
+      }
+
       setBannerImages(imgs);
     } catch (e: any) {
       console.error(e);
@@ -128,20 +180,37 @@ export default function Page() {
     } finally {
       setLoadingImages(false);
     }
-  }, [device, location.key, fetchFromDB, fetchFromStorage]);
+  }, [device, location.key, fetchFromDB, fetchFromStorage, supabase]);
 
   useEffect(() => {
     loadImages();
   }, [loadImages]);
 
   const handleUpload = useCallback(
-    async (ev: React.FormEvent<HTMLFormElement>) => {
-      ev.preventDefault();
-      const fd = new FormData(ev.currentTarget);
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+
+      // 👇 Giữ tham chiếu form trước mọi await (tránh event pooling)
+      const form = e.currentTarget;
+
+      // 👇 Chặn submit khi không có file nào được chọn
+      const input = form.querySelector(
+        'input[name="files"]'
+      ) as HTMLInputElement | null;
+      const hasFiles = !!input?.files && input.files.length > 0;
+      if (!hasFiles) {
+        toast.message("Chưa chọn ảnh", {
+          description: "Hãy chọn ít nhất một ảnh rồi upload.",
+        });
+        return; // ❌ Không gọi uploadAction, không load/reload, không reset
+      }
+
+      const fd = new FormData(form);
       fd.set("location", location.key);
       fd.set("device", device);
 
       const res = await uploadBannerAction(fd);
+
       if (!res.ok) {
         toast.error("Upload có lỗi", {
           description: JSON.stringify(res.detail?.errors || [], null, 2),
@@ -149,8 +218,9 @@ export default function Page() {
       } else {
         toast.success(`Đã upload ${res.uploaded} ảnh`);
       }
+
       await loadImages();
-      ev.currentTarget.reset();
+      form.reset(); // ✅ OK vì ta đã “chụp” sẵn form
     },
     [device, location.key, loadImages]
   );
@@ -219,19 +289,11 @@ export default function Page() {
       <section className="flex flex-wrap items-center gap-3">
         <label className="text-sm font-medium">Location</label>
         <select
-          className="rounded border px-3 py-2"
+          className="rounded border px-3 py-2 bg-neutral-100"
           value={location.key}
-          onChange={(e) => {
-            const next =
-              LOCATIONS.find((x) => x.key === e.target.value) || LOCATIONS[0];
-            setLocation(next);
-          }}
+          disabled
         >
-          {LOCATIONS.map((it) => (
-            <option key={it.id} value={it.key}>
-              {it.name}
-            </option>
-          ))}
+          <option value="hero">Hero Banner</option>
         </select>
 
         <label className="ml-4 text-sm font-medium">Thiết bị</label>

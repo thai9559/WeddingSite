@@ -36,6 +36,7 @@ export async function uploadBannerAction(formData: FormData) {
         const path = `banners/${location}/${device}/${Date.now()}-${safeName}`;
         attemptPaths.push(path);
 
+        // 1) Upload file vào Storage
         const { error: upErr } = await supabase.storage
             .from(BUCKET)
             .upload(path, file, {
@@ -47,16 +48,35 @@ export async function uploadBannerAction(formData: FormData) {
             continue;
         }
 
+        // 2) Tạo URL để thỏa NOT NULL (public hoặc fallback = path)
+        //    - Public bucket: dùng publicUrl.
+        //    - Private bucket: tránh lưu signed URL (hết hạn), ta lưu 'path' (không-null)
+        //      và UI sẽ tự tạo signed khi render.
+        const { data: pu } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        const nonNullUrl = pu?.publicUrl || path; // luôn không-null
+
+        // 3) Ghi DB — BỔ SUNG 'url' để tránh lỗi NOT NULL
         const { error: dbErr } = await supabase
             .from("banner_images")
-            .insert({ path, location, device });
+            .insert({ path, location, device, url: nonNullUrl });
+
         if (dbErr) {
-            errors.push({ name: file.name, message: dbErr.message, path });
+            // rollback file trong Storage để tránh orphan
+            const { error: rmErr } = await supabase.storage.from(BUCKET).remove([path]);
+            if (rmErr) {
+                // vẫn báo lỗi gốc + lỗi remove (nếu có)
+                errors.push({
+                    name: file.name,
+                    path,
+                    message: `${dbErr.message} (rollback storage error: ${rmErr.message})`,
+                });
+            } else {
+                errors.push({ name: file.name, path, message: dbErr.message });
+            }
             continue;
         }
 
-        const { data: pu } = supabase.storage.from(BUCKET).getPublicUrl(path);
-        if (pu?.publicUrl) uploadedPublicUrls.push(pu.publicUrl);
+        uploadedPublicUrls.push(nonNullUrl);
     }
 
     return {
