@@ -62,7 +62,8 @@ export default function VideosPage() {
           // Nếu folder chưa tồn tại, trả về mảng rỗng
           if (
             error.message?.includes("not found") ||
-            error.statusCode === "404"
+            error.message?.includes("404") ||
+            error.message?.includes("does not exist")
           ) {
             setVideos([]);
             return;
