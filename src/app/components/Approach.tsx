@@ -1,89 +1,245 @@
 "use client";
-import { useRef, useState, useEffect } from "react";
-import Image from "next/image";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { supabaseBrowser } from "@/app/lib/supabase-browser";
+import {
+  getYouTubeEmbedUrl,
+  getYouTubeThumbnail,
+  getYouTubeWatchUrl,
+} from "@/app/admin/videos/utils";
+import { Play } from "lucide-react";
+
+type VideoType = "prewedding" | "wedding";
+
+type Video = {
+  video_id: string;
+  type: VideoType;
+  url: string;
+};
+
+const BUCKET = "wedding";
 
 export function Approach() {
-  const [showVideo, setShowVideo] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [activeTab, setActiveTab] = useState<VideoType>("prewedding");
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [selectedVideoIndex, setSelectedVideoIndex] = useState<number | null>(
+    null
+  );
+  const [loading, setLoading] = useState(false);
 
-  // tự phát khi đã chuyển qua video
+  const supabase = useMemo(() => supabaseBrowser(), []);
+
+  const loadVideos = useCallback(
+    async (type: VideoType) => {
+      setLoading(true);
+      try {
+        const { data: files, error } = await supabase.storage
+          .from(BUCKET)
+          .list(`videos/${type}`, {
+            sortBy: { column: "created_at", order: "desc" },
+          });
+
+        if (error) {
+          // Nếu folder chưa tồn tại, trả về mảng rỗng
+          if (
+            error.message?.includes("not found") ||
+            error.statusCode === "404"
+          ) {
+            setVideos([]);
+            return;
+          }
+          console.error("Error loading videos:", error);
+          setVideos([]);
+          return;
+        }
+
+        // Lọc chỉ lấy file .txt
+        const txtFiles = (files || []).filter(
+          (f) => f.name.endsWith(".txt") && !f.name.startsWith(".")
+        );
+
+        // Parse video_id từ tên file
+        const videosList: Video[] = txtFiles.map((file) => {
+          const videoId = file.name.replace(/\.txt$/, "");
+          return {
+            video_id: videoId,
+            type,
+            url: getYouTubeWatchUrl(videoId),
+          };
+        });
+
+        setVideos(videosList);
+        // Reset selected video khi chuyển tab
+        setSelectedVideoIndex(videosList.length > 0 ? 0 : null);
+      } catch (err) {
+        console.error("Error loading videos:", err);
+        setVideos([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [supabase]
+  );
+
   useEffect(() => {
-    if (showVideo && videoRef.current) {
-      videoRef.current.play().catch(() => {
-        // nếu bị chặn autoplay, user có thể click vào video để chạy
-      });
-    }
-  }, [showVideo]);
+    loadVideos(activeTab);
+  }, [activeTab, loadVideos]);
 
-  // toggle pause/play khi click video
-  const togglePlay = () => {
-    const el = videoRef.current;
-    if (!el) return;
-    if (el.paused) el.play();
-    else el.pause();
-  };
+  const selectedVideo = useMemo(() => {
+    if (selectedVideoIndex === null || !videos[selectedVideoIndex]) return null;
+    return videos[selectedVideoIndex];
+  }, [videos, selectedVideoIndex]);
 
   return (
     <section className="relative mt-20 overflow-hidden select-none">
       <h2
-        className="text-center text-5xl font-extrabold tracking-wide text-gray-700"
+        className="text-center text-5xl font-extrabold tracking-wide text-gray-700 mb-8"
         style={{ fontFamily: '"Ms Madi", cursive' }}
       >
         Video
       </h2>
-      <div className="relative h-[80vh] mt-4">
-        {/* ảnh khi chưa phát */}
-        {!showVideo && (
-          <Image
-            src="/images/main-banner.jpg"
-            alt="Tablescape"
-            fill
-            className="object-cover"
-            priority
-          />
-        )}
 
-        {/* video khi phát; click để pause/play */}
-        {showVideo && (
-          <video
-            ref={videoRef}
-            className="absolute inset-0 h-full w-full cursor-pointer object-cover"
-            src="/video/wedding.mp4"
-            autoPlay
-            playsInline
-            poster="/images/main-banner.jpg"
-            onClick={togglePlay}
-            onEnded={() => setShowVideo(false)} // hết video quay về ảnh
-          />
-        )}
+      {/* Tabs */}
+      <div className="flex justify-center gap-4 mb-8">
+        <button
+          type="button"
+          onClick={() => setActiveTab("prewedding")}
+          className={`px-6 py-3 font-medium transition-all duration-300 rounded-full ${
+            activeTab === "prewedding"
+              ? "bg-gradient-to-r from-pink-100 to-rose-100 text-rose-700 shadow-md scale-105"
+              : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          }`}
+          style={{ fontFamily: '"Ms Madi", cursive', fontSize: "1.25rem" }}
+        >
+          Prewedding
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("wedding")}
+          className={`px-6 py-3 font-medium transition-all duration-300 rounded-full ${
+            activeTab === "wedding"
+              ? "bg-gradient-to-r from-pink-100 to-rose-100 text-rose-700 shadow-md scale-105"
+              : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          }`}
+          style={{ fontFamily: '"Ms Madi", cursive', fontSize: "1.25rem" }}
+        >
+          Wedding
+        </button>
       </div>
 
-      {/* overlay + text + nút: CHỈ hiện khi chưa phát */}
-      {!showVideo && (
-        <div className="absolute inset-0 grid place-items-center bg-gradient-to-t from-black/40 via-black/20 to-transparent">
-          <div className="px-6 text-center text-white">
-            <h3 className="mb-6 text-[11px] tracking-[0.6em]">OUR APPROACH</h3>
-            <p className="mx-auto max-w-3xl text-sm/relaxed text-white/90">
-              Chúng tôi tạo nên không gian ấm áp nuôi dưỡng sự kết nối và câu
-              chuyện. Kinh nghiệm sâu rộng trong lập kế hoạch lẫn styling giúp
-              từng chi tiết hòa quyện tự nhiên.
-            </p>
-
-            <div className="mt-7 inline-flex items-center gap-3">
-              <button
-                onClick={() => setShowVideo(true)}
-                className="inline-flex items-center gap-2 rounded-full border border-white/60 px-5 py-2 text-xs tracking-widest text-white/90 hover:bg-white/10"
-                aria-label="Play wedding video"
-              >
-                <span className="grid size-4 place-items-center rounded-full bg-white text-black">
-                  ►
-                </span>
-                PLAY VIDEO
-              </button>
-            </div>
-          </div>
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-rose-400"></div>
         </div>
       )}
+
+      {/* Empty state */}
+      {!loading && videos.length === 0 && (
+        <div className="text-center py-20">
+          <p className="text-gray-500 text-lg">
+            Chưa có video nào trong phần{" "}
+            {activeTab === "prewedding" ? "Prewedding" : "Wedding"}
+          </p>
+        </div>
+      )}
+
+      {/* Video content */}
+      {!loading && videos.length > 0 && (
+        <div className="max-w-6xl mx-auto px-4">
+          {/* Main video player */}
+          {selectedVideo && (
+            <div className="mb-8 rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-br from-rose-50 to-pink-50 p-4">
+              <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-black">
+                <iframe
+                  src={getYouTubeEmbedUrl(selectedVideo.video_id)}
+                  title={selectedVideo.video_id}
+                  className="absolute inset-0 w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+              <div className="mt-4 text-center">
+                <p className="text-sm text-gray-600">
+                  Video {selectedVideoIndex! + 1} / {videos.length}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Video grid */}
+          {videos.length > 1 && (
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold text-gray-700 mb-4 text-center">
+                Xem thêm video khác
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {videos.map((video, index) => (
+                  <button
+                    key={video.video_id}
+                    type="button"
+                    onClick={() => setSelectedVideoIndex(index)}
+                    className={`group relative aspect-video rounded-lg overflow-hidden transition-all duration-300 ${
+                      selectedVideoIndex === index
+                        ? "ring-4 ring-rose-400 scale-105 shadow-lg"
+                        : "hover:scale-105 hover:shadow-xl"
+                    }`}
+                  >
+                    <img
+                      src={getYouTubeThumbnail(video.video_id, "high")}
+                      alt={`Video ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="rounded-full bg-white/90 p-3">
+                        <Play className="h-6 w-6 text-rose-600 fill-rose-600" />
+                      </div>
+                    </div>
+                    {selectedVideoIndex === index && (
+                      <div className="absolute top-2 right-2 bg-rose-500 text-white text-xs px-2 py-1 rounded-full font-medium">
+                        Đang phát
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Navigation arrows for single video */}
+          {videos.length > 1 && (
+            <div className="flex justify-center gap-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedVideoIndex((prev) =>
+                    prev !== null && prev > 0 ? prev - 1 : videos.length - 1
+                  )
+                }
+                className="px-6 py-3 bg-gradient-to-r from-rose-100 to-pink-100 text-rose-700 rounded-full font-medium hover:from-rose-200 hover:to-pink-200 transition-all shadow-md hover:shadow-lg"
+              >
+                ← Video trước
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedVideoIndex((prev) =>
+                    prev !== null && prev < videos.length - 1 ? prev + 1 : 0
+                  )
+                }
+                className="px-6 py-3 bg-gradient-to-r from-rose-100 to-pink-100 text-rose-700 rounded-full font-medium hover:from-rose-200 hover:to-pink-200 transition-all shadow-md hover:shadow-lg"
+              >
+                Video tiếp →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Decorative elements */}
+      <div className="absolute -z-10 top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-pink-100 rounded-full blur-3xl opacity-30 animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-rose-100 rounded-full blur-2xl opacity-30 animate-pulse delay-300" />
+      </div>
     </section>
   );
 }
