@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Images, ImageUp } from "lucide-react";
+import { LayoutDashboard, Images, ImageUp, Video } from "lucide-react";
 import LogoutButton from "./LogoutButton";
 import {
   Sidebar,
@@ -20,6 +20,7 @@ const items = [
   { title: "Tổng quan", url: "/admin", icon: LayoutDashboard },
   { title: "Upload Albums", url: "/admin/albums", icon: Images },
   { title: "Upload Banner", url: "/admin/banner", icon: ImageUp },
+  { title: "Videos", url: "/admin/videos", icon: Video },
   { title: "Guest", url: "/admin/rsvps", icon: ImageUp },
 ];
 
