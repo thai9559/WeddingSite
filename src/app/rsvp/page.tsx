@@ -3,6 +3,7 @@ import InfoCards from "../rsvp/components/InfoCards";
 import Schedule from "../rsvp/components/Schedule";
 import Contact from "../rsvp/components/Contact";
 import RSVPCard from "../rsvp/components/RSVPCard";
+import MusicPlayer from "../rsvp/components/MusicPlayer";
 
 export const metadata = {
   title: "RSVP | Wedding",
@@ -19,6 +20,7 @@ export const metadata = {
 export default function RSVPPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-white via-[#faf7f5] to-white text-neutral-800">
+      <MusicPlayer />
       <section className="relative">
         <div className="absolute inset-0 pointer-events-none">
           <div className="mx-auto max-w-6xl h-32 blur-[70px] bg-gradient-to-r from-rose-200/50 via-amber-200/40 to-sky-200/50 rounded-b-full" />
