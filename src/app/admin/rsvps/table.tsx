@@ -1,6 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Trash2, Loader2 } from "lucide-react";
+import { deleteRSVPAction } from "./actions";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Row = {
   id: number;
@@ -72,9 +85,20 @@ async function downloadFromApi(url: string, fallbackName: string) {
   URL.revokeObjectURL(href);
 }
 
-export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
+type Props = {
+  rows: Row[];
+  eventKey?: string;
+  onDelete?: (id: number) => void;
+};
+
+export default function AdminRSVPTable({
+  rows,
+  eventKey = "wedding-2025",
+  onDelete,
+}: Props) {
   const [q, setQ] = useState("");
   const [downloading, setDownloading] = useState<"csv" | "xlsx" | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -90,8 +114,33 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
     });
   }, [rows, q]);
 
-  // ...
-  const eventKey = rows[0]?.event_key || "wedding-2025";
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+
+  const handleDeleteClick = (id: number) => {
+    setPendingDeleteId(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!pendingDeleteId) return;
+
+    setDeletingId(pendingDeleteId);
+    setDeleteDialogOpen(false);
+
+    try {
+      await deleteRSVPAction(pendingDeleteId, eventKey);
+      toast.success("Đã xóa RSVP thành công");
+      onDelete?.(pendingDeleteId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Lỗi xóa RSVP";
+      toast.error(message);
+    } finally {
+      setDeletingId(null);
+      setPendingDeleteId(null);
+    }
+  };
+
   const buildExportUrl = (format: "csv" | "xlsx") => {
     const params = new URLSearchParams({ event: eventKey });
     if (q.trim()) params.set("q", q.trim());
@@ -207,11 +256,70 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
                     </div>
                   </div>
                 )}
+
+                {/* Delete button */}
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteClick(r.id)}
+                    disabled={deletingId === r.id}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Xóa RSVP"
+                  >
+                    {deletingId === r.id ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Đang xóa...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-4 w-4" />
+                        <span>Xóa</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      {/* Alert Dialog - chỉ một instance cho toàn bộ table */}
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteDialogOpen(false);
+            setPendingDeleteId(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận xóa RSVP</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc chắn muốn xóa RSVP của{" "}
+              <span className="font-semibold">
+                {pendingDeleteId
+                  ? rows.find((row) => row.id === pendingDeleteId)?.name ||
+                    "khách mời này"
+                  : "khách mời này"}
+              </span>
+              ? Hành động này không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Xóa
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Desktop table (md+) */}
       <div className="hidden md:block overflow-x-auto">
@@ -225,6 +333,7 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
               <th className="text-left px-4 py-3">Số khách</th>
               <th className="text-left px-4 py-3">Lời nhắn</th>
               <th className="text-left px-4 py-3">Thời gian</th>
+              <th className="text-center px-4 py-3">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -253,13 +362,29 @@ export default function AdminRSVPTable({ rows }: { rows: Row[] }) {
                   {r.message}
                 </td>
                 <td className="px-4 py-3">{formatVNTime(r.created_at)}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteClick(r.id)}
+                    disabled={deletingId === r.id}
+                    className="inline-flex items-center justify-center gap-1 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Xóa RSVP"
+                  >
+                    {deletingId === r.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    <span className="hidden sm:inline">Xóa</span>
+                  </button>
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
                 <td
                   className="px-4 py-6 text-center text-neutral-500"
-                  colSpan={7}
+                  colSpan={8}
                 >
                   Không có kết quả phù hợp.
                 </td>

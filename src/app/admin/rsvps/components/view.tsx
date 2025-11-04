@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import AdminRSVPTable from "../table";
 import type { TableRow } from "../page";
 
@@ -64,7 +65,9 @@ function groupCounts(rows: TableRow[]) {
   return Array.from(map.entries()); // [key, { rsvps, people }][]
 }
 
-export default function RSVPView({ eventKey, rows }: Props) {
+export default function RSVPView({ eventKey, rows: initialRows }: Props) {
+  const router = useRouter();
+  const [rows, setRows] = useState<TableRow[]>(initialRows);
   const [q, setQ] = useState("");
   const [relation, setRelation] = useState<string>("all");
 
@@ -192,7 +195,14 @@ export default function RSVPView({ eventKey, rows }: Props) {
       </div>
 
       {/* Bảng */}
-      <AdminRSVPTable rows={filtered} />
+      <AdminRSVPTable
+        rows={filtered}
+        eventKey={eventKey}
+        onDelete={(id) => {
+          setRows((prev) => prev.filter((r) => r.id !== id));
+          router.refresh();
+        }}
+      />
     </>
   );
 }
