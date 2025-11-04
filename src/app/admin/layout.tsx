@@ -20,7 +20,6 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // ✅ Chạy SSR theo request (không prerender)
   const supabase = await supabaseServer();
 
   const {

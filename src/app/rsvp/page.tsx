@@ -1,7 +1,5 @@
-import { EVENT } from "@/app/rsvp/event";
 import InfoCards from "../rsvp/components/InfoCards";
 import Schedule from "../rsvp/components/Schedule";
-import Contact from "../rsvp/components/Contact";
 import RSVPCard from "../rsvp/components/RSVPCard";
 import MusicPlayer from "../rsvp/components/MusicPlayer";
 

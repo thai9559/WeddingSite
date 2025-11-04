@@ -48,27 +48,6 @@ export default function MusicPlayer() {
     }
   };
 
-  // Toggle play/pause
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            setIsPlaying(true);
-          })
-          .catch((error) => {
-            console.log("Play failed:", error);
-          });
-      }
-    }
-  };
-
   // Toggle mute
   const toggleMute = () => {
     if (!audioRef.current) return;
