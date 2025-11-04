@@ -1,9 +1,8 @@
 export default function Schedule() {
   const items = [
-    { t: "09:30", d: "Đón khách & check-in" },
-    { t: "10:00", d: "Khai mạc & làm lễ" },
-    { t: "10:45", d: "Dùng tiệc" },
-    { t: "12:30", d: "Chụp ảnh & giao lưu" },
+    { t: "18:00", d: "Đón khách & check-in" },
+    { t: "19:00", d: "Làm lễ" },
+    { t: "19:30", d: "Khai tiệc" },
   ];
 
   return (

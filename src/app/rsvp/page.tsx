@@ -47,7 +47,6 @@ export default function RSVPPage() {
           </div>
 
           <div className="lg:col-span-5 space-y-6">
-            <Contact />
             <div className="lg:sticky lg:top-6">
               <RSVPCard />
             </div>
