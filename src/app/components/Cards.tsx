@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import LightBox from "./Lightbox";
 
@@ -110,8 +111,11 @@ export default function Albums() {
       return (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mt-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div
+            <motion.div
               key={i}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, delay: i * 0.1 }}
               className="relative aspect-[4/3] rounded-xl bg-neutral-100 animate-pulse"
             />
           ))}
@@ -126,36 +130,59 @@ export default function Albums() {
 
     return (
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mt-4">
-        {albums.map((a) => (
-          <article
+        {albums.map((a, index) => (
+          <motion.article
             key={a.id}
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.5,
+              delay: index * 0.1,
+              ease: "easeOut",
+            }}
+            whileHover={{ y: -8, scale: 1.02 }}
             className="group cursor-pointer"
             onClick={() => setOpenAlbum(a)}
           >
-            <div className="relative aspect-[4/3] overflow-hidden rounded-xl">
+            <div className="relative aspect-[4/3] overflow-hidden rounded-xl shadow-lg group-hover:shadow-2xl transition-shadow duration-300">
               {a.cover_url ? (
                 <Image
                   src={a.cover_url}
                   alt={a.title}
                   fill
-                  className="object-cover object-top transition duration-500 group-hover:scale-105"
+                  className="object-cover object-top transition-transform duration-700 ease-out group-hover:scale-110"
                 />
               ) : (
                 <div className="absolute inset-0 grid place-items-center bg-neutral-100 text-neutral-400 text-sm">
                   Không có cover
                 </div>
               )}
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+              <motion.div
+                className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"
+                initial={{ opacity: 0.6 }}
+                whileHover={{ opacity: 0.8 }}
+                transition={{ duration: 0.3 }}
+              />
               <div className="pointer-events-none absolute inset-x-0 bottom-0 p-4 text-center">
-                <div className="text-[11px] tracking-[0.3em] text-white/90">
+                <motion.div
+                  className="text-[11px] tracking-[0.3em] text-white/90 font-medium"
+                  initial={{ y: 10, opacity: 0.9 }}
+                  whileHover={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                >
                   {a.title.toUpperCase()}
-                </div>
-                <div className="text-[10px] tracking-widest text-white/70 mt-0.5">
+                </motion.div>
+                <motion.div
+                  className="text-[10px] tracking-widest text-white/70 mt-0.5"
+                  initial={{ y: 5, opacity: 0.7 }}
+                  whileHover={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.3, delay: 0.05 }}
+                >
                   {a.key}
-                </div>
+                </motion.div>
               </div>
             </div>
-          </article>
+          </motion.article>
         ))}
       </div>
     );
@@ -163,75 +190,106 @@ export default function Albums() {
 
   return (
     <section className="mx-auto max-w-6xl px-6 pb-16 pt-14">
-      <h2
+      <motion.h2
+        initial={{ opacity: 0, y: -20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-100px" }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
         className="text-center text-5xl font-extrabold tracking-wide text-gray-700"
         style={{ fontFamily: '"Ms Madi", cursive' }}
       >
         Albums
-      </h2>
+      </motion.h2>
 
-      {content}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        {content}
+      </motion.div>
 
       {/* Modal xem ảnh dạng grid */}
-      {openAlbum && viewerIndex === null && (
-        <div
-          className="fixed inset-0 z-[100] grid place-items-center bg-black/80 p-4"
-          role="dialog"
-          aria-modal="true"
-          onClick={(e: React.MouseEvent<HTMLDivElement>) => {
-            if (e.target === e.currentTarget) setOpenAlbum(null);
-          }}
-        >
-          <div className="relative max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <h3 className="text-xs tracking-[0.35em] text-neutral-700">
-                {openAlbum.title.toUpperCase()} — ALBUM
-              </h3>
-              <button
-                onClick={() => setOpenAlbum(null)}
-                className="rounded-full px-3 py-1 text-neutral-600 hover:bg-neutral-100"
-              >
-                ×
-              </button>
-            </div>
+      <AnimatePresence>
+        {openAlbum && viewerIndex === null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-[100] grid place-items-center bg-black/80 p-4"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+              if (e.target === e.currentTarget) setOpenAlbum(null);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+              className="relative max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                <h3 className="text-xs tracking-[0.35em] text-neutral-700">
+                  {openAlbum.title.toUpperCase()} — ALBUM
+                </h3>
+                <button
+                  onClick={() => setOpenAlbum(null)}
+                  className="rounded-full px-3 py-1 text-neutral-600 hover:bg-neutral-100"
+                >
+                  ×
+                </button>
+              </div>
 
-            <div className="max-h-[calc(90vh-52px)] overflow-auto p-4">
-              {loadingImages ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="aspect-[3/4] rounded-lg bg-neutral-100 animate-pulse"
-                    />
-                  ))}
-                </div>
-              ) : images.length === 0 ? (
-                <div className="text-sm text-neutral-500">
-                  Album chưa có ảnh.
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                  {images.map((img, i) => (
-                    <button
-                      key={img.id}
-                      className="relative aspect-[3/4] overflow-hidden rounded-lg"
-                      onClick={() => setViewerIndex(i)}
-                      aria-label={`View ${openAlbum.title} ${i + 1}`}
-                    >
-                      <Image
-                        src={img.url}
-                        alt={img.caption ?? openAlbum.title}
-                        fill
-                        className="object-cover"
+              <div className="max-h-[calc(90vh-52px)] overflow-auto p-4">
+                {loadingImages ? (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="aspect-[3/4] rounded-lg bg-neutral-100 animate-pulse"
                       />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+                    ))}
+                  </div>
+                ) : images.length === 0 ? (
+                  <div className="text-sm text-neutral-500">
+                    Album chưa có ảnh.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                    {images.map((img, i) => (
+                      <motion.button
+                        key={img.id}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{
+                          duration: 0.3,
+                          delay: i * 0.05,
+                          ease: "easeOut",
+                        }}
+                        whileHover={{ scale: 1.05, zIndex: 10 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="relative aspect-[3/4] overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300"
+                        onClick={() => setViewerIndex(i)}
+                        aria-label={`View ${openAlbum.title} ${i + 1}`}
+                      >
+                        <Image
+                          src={img.url}
+                          alt={img.caption ?? openAlbum.title}
+                          fill
+                          className="object-cover transition-transform duration-500 hover:scale-110"
+                        />
+                      </motion.button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* LightBox nếu bạn muốn xem full-screen */}
       {openAlbum && viewerIndex !== null && images.length > 0 && (
