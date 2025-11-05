@@ -1,5 +1,6 @@
 // components/Hero.tsx
 "use client";
+export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";

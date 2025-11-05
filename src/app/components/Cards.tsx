@@ -1,9 +1,7 @@
-// src/app/admin/rsvps/view.tsx  ⬅️ (giữ nguyên file Albums của bạn ở đường dẫn thực tế)
-// Nếu file của bạn là: src/app/components/Cards.tsx hay tương tự, hãy đặt đúng path.
-
 "use client";
+export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
@@ -26,14 +24,15 @@ type AlbumImage = {
 export default function Albums() {
   const [albums, setAlbums] = useState<Album[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // modal state
   const [openAlbum, setOpenAlbum] = useState<Album | null>(null);
   const [images, setImages] = useState<AlbumImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
-  // khoá scroll khi mở modal
+  // ✅ Supabase chỉ khởi tạo khi client mount
+  const supabaseRef = useRef<ReturnType<typeof supabaseBrowser> | null>(null);
+
+  // khóa scroll khi mở modal
   useEffect(() => {
     document.body.style.overflow = openAlbum ? "hidden" : "";
     return () => {
@@ -41,48 +40,49 @@ export default function Albums() {
     };
   }, [openAlbum]);
 
-  // tải danh sách album
+  // ✅ Khởi tạo Supabase khi client ready
   useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const supabase = supabaseBrowser(); // ✅ lấy client
-        const { data, error } = await supabase
-          .from("albums")
-          .select("id, key, title, cover_url")
-          .order("id", { ascending: true });
-
-        if (error) throw error;
-        if (!cancelled) setAlbums((data as Album[]) ?? []);
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : "Không thể tải danh sách album.";
-        if (!cancelled) setError(message);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    if (typeof window === "undefined") return;
+    supabaseRef.current = supabaseBrowser();
   }, []);
 
-  // Khi mở 1 album -> load ảnh album đó
+  // ✅ Tải danh sách album
+  const loadAlbums = useCallback(async () => {
+    if (!supabaseRef.current) return;
+    try {
+      const { data, error } = await supabaseRef.current
+        .from("albums")
+        .select("id, key, title, cover_url")
+        .order("id", { ascending: true });
+      if (error) throw error;
+      setAlbums((data as Album[]) ?? []);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Không thể tải danh sách album.";
+      setError(message);
+    }
+  }, []);
+
   useEffect(() => {
-    if (!openAlbum) {
+    if (typeof window === "undefined") return;
+    loadAlbums();
+  }, [loadAlbums]);
+
+  // ✅ Khi mở 1 album -> load ảnh của album đó
+  useEffect(() => {
+    if (!openAlbum || !supabaseRef.current) {
       setImages([]);
       setViewerIndex(null);
       return;
     }
 
-    let cancelled = false; // ✅ tránh set state sau unmount
+    let cancelled = false;
 
     (async () => {
       try {
         setLoadingImages(true);
-        const supabase = supabaseBrowser(); // ✅ lấy client
-        const { data, error } = await supabase
-          .from("images")
+        const { data, error } = await supabaseRef
+          .current!.from("images")
           .select("id, url, caption, sort")
           .eq("album_id", openAlbum.id)
           .order("sort", { ascending: true, nullsFirst: true })
@@ -291,7 +291,6 @@ export default function Albums() {
         )}
       </AnimatePresence>
 
-      {/* LightBox nếu bạn muốn xem full-screen */}
       {openAlbum && viewerIndex !== null && images.length > 0 && (
         <LightBox
           images={images.map((x) => x.url)}

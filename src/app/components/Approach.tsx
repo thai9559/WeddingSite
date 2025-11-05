@@ -1,5 +1,7 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import {
   getYouTubeEmbedUrl,
@@ -26,62 +28,65 @@ export function Approach() {
   );
   const [loading, setLoading] = useState(false);
 
-  const supabase = useMemo(() => supabaseBrowser(), []);
+  // ✅ Chỉ khởi tạo Supabase sau khi client mount
+  const supabaseRef = useRef<ReturnType<typeof supabaseBrowser> | null>(null);
 
-  const loadVideos = useCallback(
-    async (type: VideoType) => {
-      setLoading(true);
-      try {
-        const { data: files, error } = await supabase.storage
-          .from(BUCKET)
-          .list(`videos/${type}`, {
-            sortBy: { column: "created_at", order: "desc" },
-          });
+  const loadVideos = useCallback(async (type: VideoType) => {
+    if (!supabaseRef.current) return;
+    setLoading(true);
+    try {
+      const { data: files, error } = await supabaseRef.current.storage
+        .from(BUCKET)
+        .list(`videos/${type}`, {
+          sortBy: { column: "created_at", order: "desc" },
+        });
 
-        if (error) {
-          // Nếu folder chưa tồn tại, trả về mảng rỗng
-          if (
-            error.message?.includes("not found") ||
-            error.message?.includes("404") ||
-            error.message?.includes("does not exist")
-          ) {
-            setVideos([]);
-            return;
-          }
-          console.error("Error loading videos:", error);
+      if (error) {
+        if (
+          error.message?.includes("not found") ||
+          error.message?.includes("404") ||
+          error.message?.includes("does not exist")
+        ) {
           setVideos([]);
           return;
         }
-
-        // Lọc chỉ lấy file .txt
-        const txtFiles = (files || []).filter(
-          (f) => f.name.endsWith(".txt") && !f.name.startsWith(".")
-        );
-
-        // Parse video_id từ tên file
-        const videosList: Video[] = txtFiles.map((file) => {
-          const videoId = file.name.replace(/\.txt$/, "");
-          return {
-            video_id: videoId,
-            type,
-            url: getYouTubeWatchUrl(videoId),
-          };
-        });
-
-        setVideos(videosList);
-        // Reset selected video khi chuyển tab
-        setSelectedVideoIndex(videosList.length > 0 ? 0 : null);
-      } catch (err) {
-        console.error("Error loading videos:", err);
+        console.error("Error loading videos:", error);
         setVideos([]);
-      } finally {
-        setLoading(false);
+        return;
       }
-    },
-    [supabase]
-  );
 
+      const txtFiles = (files || []).filter(
+        (f) => f.name.endsWith(".txt") && !f.name.startsWith(".")
+      );
+
+      const videosList: Video[] = txtFiles.map((file) => {
+        const videoId = file.name.replace(/\.txt$/, "");
+        return {
+          video_id: videoId,
+          type,
+          url: getYouTubeWatchUrl(videoId),
+        };
+      });
+
+      setVideos(videosList);
+      setSelectedVideoIndex(videosList.length > 0 ? 0 : null);
+    } catch (err) {
+      console.error("Error loading videos:", err);
+      setVideos([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ✅ Khởi tạo Supabase chỉ sau khi window có (client)
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    supabaseRef.current = supabaseBrowser();
+  }, []);
+
+  // ✅ Gọi loadVideos khi tab đổi và supabase đã sẵn sàng
+  useEffect(() => {
+    if (!supabaseRef.current) return;
     loadVideos(activeTab);
   }, [activeTab, loadVideos]);
 
@@ -206,7 +211,7 @@ export function Approach() {
             </div>
           )}
 
-          {/* Navigation arrows for single video */}
+          {/* Navigation arrows */}
           {videos.length > 1 && (
             <div className="flex justify-center gap-4">
               <button
