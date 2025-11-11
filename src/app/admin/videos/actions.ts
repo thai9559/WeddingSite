@@ -2,7 +2,11 @@
 
 import { cookies } from "next/headers";
 import { createServerActionClient } from "@supabase/auth-helpers-nextjs";
-import { extractYouTubeId } from "./utils";
+import {
+    extractYouTubeId,
+    extractVimeoId,
+    getVideoType,
+} from "./utils";
 
 export type VideoType = "prewedding" | "wedding";
 
@@ -21,20 +25,28 @@ export async function addVideoAction(formData: FormData) {
     const url = String(formData.get("url") || "").trim();
     const type = String(formData.get("type") || "").trim() as VideoType;
 
-    if (!url) {
-        throw new Error("Vui lòng nhập link YouTube.");
-    }
+    if (!url) throw new Error("Vui lòng nhập link video.");
 
     if (type !== "prewedding" && type !== "wedding") {
         throw new Error("Loại video không hợp lệ.");
     }
 
-    const videoId = extractYouTubeId(url);
-    if (!videoId) {
-        throw new Error("Link YouTube không hợp lệ. Vui lòng kiểm tra lại.");
+    // ✅ Nhận diện loại video
+    const videoType = getVideoType(url);
+    if (videoType === "unknown") {
+        throw new Error("Chỉ hỗ trợ YouTube hoặc Vimeo.");
     }
 
-    // Kiểm tra xem file đã tồn tại chưa trong Storage
+    // ✅ Lấy videoId tương ứng
+    let videoId: string | null = null;
+    if (videoType === "youtube") videoId = extractYouTubeId(url);
+    else if (videoType === "vimeo") videoId = extractVimeoId(url);
+
+    if (!videoId) {
+        throw new Error("Không thể xác định ID video. Kiểm tra lại link.");
+    }
+
+    // ✅ Kiểm tra trùng file
     const filePath = `videos/${type}/${videoId}.txt`;
     const { data: existing } = await supabase.storage
         .from(BUCKET)
@@ -46,11 +58,8 @@ export async function addVideoAction(formData: FormData) {
         throw new Error("Video này đã tồn tại trong danh sách.");
     }
 
-    // Tạo file text chứa link YouTube
-    const fileContent = url;
-    const blob = new Blob([fileContent], { type: "text/plain; charset=utf-8" });
-
-    // Upload file vào Storage
+    // ✅ Tạo file text chứa URL thật (cả Vimeo hoặc YouTube)
+    const blob = new Blob([url], { type: "text/plain; charset=utf-8" });
     const { error: uploadError } = await supabase.storage
         .from(BUCKET)
         .upload(filePath, blob, {

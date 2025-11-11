@@ -28,7 +28,7 @@ export default function InfoCards() {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6 text-[#473d2a]">
         {/* Thông tin */}
         <div className="md:col-span-2 space-y-2">
-          <p className="text-[18px]">{EVENT.venueName}</p>
+          <p className="text-[18px] font-bold ">{EVENT.venueName}</p>
           <p className="text-[14px] text-[#6b5b3d] leading-snug">
             {EVENT.venueAddr}
           </p>

@@ -32,8 +32,8 @@ export default function RSVPPage() {
           </h1>
           <p className="mt-3 text-neutral-600 max-w-2xl">
             Rất mong được đón bạn trong ngày vui của tụi mình. Vui lòng điền
-            thông tin RSVP để tụi mình sắp xếp chỗ ngồi, thực đơn và đón tiếp
-            chu đáo nhé 💐
+            thông tin để tụi mình sắp xếp chỗ ngồi, thực đơn và đón tiếp chu đáo
+            nhé 💐
           </p>
         </div>
       </section>

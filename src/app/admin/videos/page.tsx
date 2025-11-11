@@ -6,8 +6,10 @@ import { supabaseBrowser } from "@/app/lib/supabase-browser";
 import { addVideoAction, deleteVideoAction, type VideoType } from "./actions";
 import {
   extractYouTubeId,
+  extractVimeoId,
   getYouTubeThumbnail,
-  getYouTubeWatchUrl,
+  getEmbedUrl,
+  getVideoType,
 } from "./utils";
 import { toast } from "sonner";
 import { Loader2, Trash2, Play, ExternalLink } from "lucide-react";
@@ -42,16 +44,16 @@ export default function VideosPage() {
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState("");
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
-  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const supabase = useMemo(() => supabaseBrowser(), []);
 
+  // 🔹 Load videos list
   const loadVideos = useCallback(
     async (type: VideoType) => {
       setLoading(true);
       try {
-        // List files trong folder videos/{type}/
         const { data: files, error } = await supabase.storage
           .from(BUCKET)
           .list(`videos/${type}`, {
@@ -59,66 +61,42 @@ export default function VideosPage() {
           });
 
         if (error) {
-          // Nếu folder chưa tồn tại, trả về mảng rỗng
-          if (
-            error.message?.includes("not found") ||
-            error.message?.includes("404") ||
-            error.message?.includes("does not exist")
-          ) {
+          if (error.message?.includes("not found")) {
             setVideos([]);
             return;
           }
           throw error;
         }
 
-        // Lọc chỉ lấy file .txt
-        const txtFiles = (files || []).filter(
-          (f) => f.name.endsWith(".txt") && !f.name.startsWith(".")
-        );
+        // lấy các file .txt và đọc nội dung (url thật)
+        const txtFiles = (files || []).filter((f) => f.name.endsWith(".txt"));
 
-        // Parse video_id từ tên file (ví dụ: "dQw4w9WgXcQ.txt" -> "dQw4w9WgXcQ")
-        const videosList: Video[] = txtFiles.map((file) => {
-          const videoId = file.name.replace(/\.txt$/, "");
-          const path = `videos/${type}/${file.name}`;
-          return {
-            video_id: videoId,
-            type,
-            url: getYouTubeWatchUrl(videoId),
-            path,
-            created_at: file.created_at || new Date().toISOString(),
-          };
-        });
-
-        setVideos(videosList);
-      } catch (err: unknown) {
-        let message = "Lỗi tải danh sách video";
-
-        if (err instanceof Error && err.message) {
-          message = err.message;
-        } else if (typeof err === "object" && err !== null) {
-          const supabaseError = err as {
-            message?: string;
-            code?: string;
-            details?: string;
-          };
-          if (supabaseError.message) {
-            message = supabaseError.message;
-          } else if (supabaseError.code) {
-            message = `Lỗi ${supabaseError.code}: ${
-              supabaseError.details || "Không có thông tin chi tiết"
-            }`;
+        const videoList: Video[] = [];
+        for (const f of txtFiles) {
+          const path = `videos/${type}/${f.name}`;
+          const { data: content } = await supabase.storage
+            .from(BUCKET)
+            .download(path);
+          let url = "";
+          if (content) {
+            url = await content.text();
           }
+          const id =
+            extractYouTubeId(url) ||
+            extractVimeoId(url) ||
+            f.name.replace(".txt", "");
+          videoList.push({
+            video_id: id,
+            type,
+            url,
+            path,
+            created_at: f.created_at || new Date().toISOString(),
+          });
         }
 
-        toast.error(message, {
-          duration: 5000,
-        });
-
-        console.error("Error loading videos:", {
-          error: err,
-          type,
-          errorString: JSON.stringify(err, null, 2),
-        });
+        setVideos(videoList);
+      } catch (err: any) {
+        toast.error(err?.message || "Lỗi tải danh sách video");
       } finally {
         setLoading(false);
       }
@@ -130,13 +108,15 @@ export default function VideosPage() {
     loadVideos(activeTab);
   }, [activeTab, loadVideos]);
 
+  // 🔹 Thêm video
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (isSubmitting || !youtubeUrl.trim()) return;
+    if (isSubmitting || !videoUrl.trim()) return;
 
-    const videoId = extractYouTubeId(youtubeUrl);
-    if (!videoId) {
-      toast.error("Link YouTube không hợp lệ. Vui lòng kiểm tra lại.");
+    const trimmed = videoUrl.trim();
+    const type = getVideoType(trimmed);
+    if (type === "unknown") {
+      toast.error("Chỉ hỗ trợ YouTube hoặc Vimeo");
       return;
     }
 
@@ -146,16 +126,15 @@ export default function VideosPage() {
 
     try {
       const formData = new FormData();
-      formData.append("url", youtubeUrl.trim());
+      formData.append("url", trimmed);
       formData.append("type", activeTab);
 
       await addVideoAction(formData);
       toast.success("Đã thêm video thành công!");
-      setYoutubeUrl("");
+      setVideoUrl("");
       await loadVideos(activeTab);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Lỗi thêm video";
-      toast.error(message);
+    } catch (err: any) {
+      toast.error(err?.message || "Lỗi thêm video");
     } finally {
       setIsSubmitting(false);
       setBusy(false);
@@ -163,9 +142,9 @@ export default function VideosPage() {
     }
   };
 
+  // 🔹 Xoá video
   const handleDelete = async (video: Video) => {
     if (deletingPath !== null) return;
-
     setDeletingPath(video.path);
     setBusy(true);
     setBusyText("Đang xóa video...");
@@ -174,9 +153,8 @@ export default function VideosPage() {
       await deleteVideoAction(video.path);
       toast.success("Đã xóa video");
       await loadVideos(activeTab);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Lỗi xóa video";
-      toast.error(message);
+    } catch (err: any) {
+      toast.error(err?.message || "Lỗi xóa video");
     } finally {
       setDeletingPath(null);
       setBusy(false);
@@ -184,10 +162,7 @@ export default function VideosPage() {
     }
   };
 
-  const previewVideoId = useMemo(() => {
-    if (!youtubeUrl.trim()) return null;
-    return extractYouTubeId(youtubeUrl);
-  }, [youtubeUrl]);
+  const videoType = useMemo(() => getVideoType(videoUrl), [videoUrl]);
 
   return (
     <main className="mx-auto max-w-6xl p-6">
@@ -195,84 +170,78 @@ export default function VideosPage() {
 
       <h1 className="text-2xl font-semibold mb-2">Quản lý Video</h1>
       <p className="text-sm text-neutral-500 mb-6">
-        Thêm link YouTube để hiển thị video trên website. Hỗ trợ các định dạng:
-        youtube.com/watch?v=..., youtu.be/..., youtube.com/shorts/...
+        Thêm link YouTube hoặc Vimeo để hiển thị video trên website.
       </p>
 
       {/* Tabs */}
       <div className="mb-6 flex gap-2 border-b">
-        <button
-          type="button"
-          onClick={() => setActiveTab("prewedding")}
-          className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === "prewedding"
-              ? "border-b-2 border-black text-black"
-              : "text-neutral-500 hover:text-neutral-700"
-          }`}
-        >
-          Prewedding
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("wedding")}
-          className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === "wedding"
-              ? "border-b-2 border-black text-black"
-              : "text-neutral-500 hover:text-neutral-700"
-          }`}
-        >
-          Wedding
-        </button>
+        {["prewedding", "wedding"].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab as VideoType)}
+            className={`px-4 py-2 font-medium ${
+              activeTab === tab
+                ? "border-b-2 border-black text-black"
+                : "text-neutral-500 hover:text-neutral-700"
+            }`}
+          >
+            {tab === "prewedding" ? "Prewedding" : "Wedding"}
+          </button>
+        ))}
       </div>
 
       {/* Form thêm video */}
       <section className="mb-8 rounded-lg border bg-white p-6">
-        <h2 className="text-lg font-semibold mb-4">Thêm video mới</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
-              htmlFor="youtube-url"
+              htmlFor="video-url"
               className="block text-sm font-medium mb-2"
             >
-              Link YouTube
+              Link Video (YouTube hoặc Vimeo)
             </label>
             <input
-              id="youtube-url"
+              id="video-url"
               type="text"
-              value={youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=... hoặc https://vimeo.com/..."
               className="w-full rounded border px-3 py-2"
               disabled={isSubmitting}
             />
-            {previewVideoId && (
-              <p className="mt-1 text-xs text-green-600">✓ Link hợp lệ</p>
+            {videoUrl && (
+              <p className="mt-1 text-xs text-green-600">
+                ✓{" "}
+                {videoType === "youtube"
+                  ? "YouTube"
+                  : videoType === "vimeo"
+                  ? "Vimeo"
+                  : "Không hợp lệ"}
+              </p>
             )}
           </div>
 
-          {/* Preview thumbnail */}
-          {previewVideoId && (
+          {videoUrl && videoType !== "unknown" && (
             <div className="rounded-lg border p-4 bg-neutral-50">
               <p className="text-xs font-medium mb-2 text-neutral-600">
                 Preview:
               </p>
               <div className="relative aspect-video w-full max-w-md rounded-lg overflow-hidden border">
-                <img
-                  src={getYouTubeThumbnail(previewVideoId, "high")}
-                  alt="Preview"
-                  className="w-full h-full object-cover"
+                <iframe
+                  src={getEmbedUrl(videoUrl)}
+                  title="Preview"
+                  className="absolute inset-0 w-full h-full"
+                  allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+                  allowFullScreen
                 />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                  <Play className="h-12 w-12 text-white" />
-                </div>
               </div>
             </div>
           )}
 
           <button
             type="submit"
-            disabled={isSubmitting || !previewVideoId}
-            className="rounded bg-black px-4 py-2 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-neutral-800 transition-colors"
+            disabled={isSubmitting || videoType === "unknown"}
+            className="rounded bg-black px-4 py-2 text-white disabled:opacity-50 hover:bg-neutral-800 transition-colors"
           >
             {isSubmitting ? (
               <>
@@ -304,69 +273,78 @@ export default function VideosPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {videos.map((video) => (
-              <div
-                key={video.path}
-                className="group relative rounded-lg border bg-white overflow-hidden hover:shadow-lg transition-shadow"
-              >
-                {/* Thumbnail */}
-                <div className="relative aspect-video w-full bg-neutral-100">
-                  <img
-                    src={getYouTubeThumbnail(video.video_id, "high")}
-                    alt={`Video ${video.video_id}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <a
-                      href={video.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-white hover:bg-black/90 transition-colors"
-                    >
-                      <Play className="h-5 w-5" />
-                      <span className="text-sm font-medium">
-                        Xem trên YouTube
-                      </span>
-                    </a>
-                  </div>
+            {videos.map((video) => {
+              const type = getVideoType(video.url);
+              const thumb =
+                type === "youtube" && extractYouTubeId(video.url)
+                  ? getYouTubeThumbnail(extractYouTubeId(video.url)!, "high")
+                  : "https://cdn-icons-png.flaticon.com/512/1384/1384060.png";
 
-                  {/* Delete button */}
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(video)}
-                    disabled={deletingPath === video.path}
-                    className="absolute top-2 right-2 rounded-full bg-black/70 p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 disabled:opacity-50"
-                    title="Xóa video"
-                  >
-                    {deletingPath === video.path ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+              return (
+                <div
+                  key={video.path}
+                  className="group relative rounded-lg border bg-white overflow-hidden hover:shadow-lg transition-shadow"
+                >
+                  <div className="relative aspect-video w-full bg-neutral-100">
+                    {type === "vimeo" ? (
+                      <iframe
+                        src={getEmbedUrl(video.url)}
+                        className="absolute inset-0 w-full h-full"
+                        allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+                        allowFullScreen
+                      />
                     ) : (
-                      <Trash2 className="h-4 w-4" />
+                      <img
+                        src={thumb}
+                        alt={`Video ${video.video_id}`}
+                        className="w-full h-full object-cover"
+                      />
                     )}
-                  </button>
-                </div>
 
-                {/* Info */}
-                <div className="p-3">
-                  <div className="flex items-center justify-between">
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <a
+                        href={video.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-white hover:bg-black/90 transition-colors"
+                      >
+                        <Play className="h-5 w-5" />
+                        <span className="text-sm font-medium">Xem video</span>
+                      </a>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(video)}
+                      disabled={deletingPath === video.path}
+                      className="absolute top-2 right-2 rounded-full bg-black/70 p-2 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 disabled:opacity-50"
+                      title="Xóa video"
+                    >
+                      {deletingPath === video.path ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="p-3">
                     <a
                       href={video.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-neutral-600 hover:text-neutral-900 transition-colors"
+                      className="flex items-center gap-1 text-xs text-neutral-600 hover:text-neutral-900"
                     >
-                      <span className="truncate">
-                        Video ID: {video.video_id}
-                      </span>
-                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{video.url}</span>
+                      <ExternalLink className="h-3 w-3" />
                     </a>
+                    <p className="text-xs text-neutral-400 mt-1">
+                      {new Date(video.created_at).toLocaleDateString("vi-VN")}
+                    </p>
                   </div>
-                  <p className="text-xs text-neutral-400 mt-1">
-                    {new Date(video.created_at).toLocaleDateString("vi-VN")}
-                  </p>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

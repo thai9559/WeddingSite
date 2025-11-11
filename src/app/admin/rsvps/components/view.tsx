@@ -105,9 +105,9 @@ export default function RSVPView({ eventKey, rows: initialRows }: Props) {
       {/* Header + Filter + Search */}
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-semibold">RSVPs — {eventKey}</h1>
+          <h1 className="text-2xl font-semibold">Quản lí đăng kí lễ cưới</h1>
           <p className="mt-1 text-sm text-neutral-600">
-            Tổng người dự kiến: <b>{totalPeople}</b> · Số RSVP:{" "}
+            Tổng người dự kiến: <b>{totalPeople}</b> · Số lượt đăng kí:{" "}
             <b>{totalRSVPs}</b>
           </p>
           {relation !== "all" && (
