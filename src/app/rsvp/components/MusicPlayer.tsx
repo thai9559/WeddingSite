@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 
 // Link nhạc đám cưới - có thể thay đổi hoặc lấy từ env/config
@@ -21,6 +21,13 @@ export default function MusicPlayer() {
     }
   }, []);
 
+  // Handle user interaction để enable autoplay
+  const handleInteraction = useCallback(() => {
+    if (!hasInteracted) {
+      setHasInteracted(true);
+    }
+  }, [hasInteracted]);
+
   // Tự động phát nhạc khi user tương tác với trang (để tránh autoplay policy)
   useEffect(() => {
     if (!hasInteracted || !audioRef.current) return;
@@ -40,13 +47,6 @@ export default function MusicPlayer() {
         });
     }
   }, [hasInteracted, isMuted]);
-
-  // Handle user interaction để enable autoplay
-  const handleInteraction = () => {
-    if (!hasInteracted) {
-      setHasInteracted(true);
-    }
-  };
 
   // Toggle mute
   const toggleMute = () => {
@@ -92,7 +92,7 @@ export default function MusicPlayer() {
       window.removeEventListener("scroll", enableInteraction);
       window.removeEventListener("touchstart", enableInteraction);
     };
-  }, []);
+  }, [handleInteraction]);
 
   return (
     <>
