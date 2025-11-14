@@ -1,7 +1,6 @@
 // app/(admin)/layout.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-// (tùy chọn) cấm cache hoàn toàn ở server
 export const fetchCache = "default-no-store";
 
 import { redirect } from "next/navigation";
@@ -26,29 +25,16 @@ export default async function AdminLayout({
     data: { session },
   } = await supabase.auth.getSession();
 
+  // ❗ Chỉ check login, KHÔNG kiểm tra email admin nữa
   if (!session) redirect("/login");
-
-  const email = session.user.email?.toLowerCase() || "";
-  const allowed = process.env.ADMIN_EMAIL?.toLowerCase() || "";
-
-  // ✅ ADMIN_EMAIL phải được set trong môi trường server (Vercel env)
-  if (!allowed) {
-    // Nên throw để lộ rõ config lỗi trên server (không lộ cho client)
-    throw new Error("Missing ADMIN_EMAIL env");
-  }
-
-  if (email !== allowed) {
-    redirect("/login");
-  }
 
   return (
     <SidebarProvider>
       {/* Sidebar trái */}
       <AppSidebar />
 
-      {/* Phần nội dung */}
+      {/* Nội dung chính */}
       <div className="flex min-h-screen flex-1 flex-col bg-neutral-100 text-neutral-900">
-        {/* Top bar nhỏ chứa nút mở/đóng sidebar (mobile) */}
         <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b bg-white px-4">
           <SidebarTrigger />
           <div className="text-sm font-medium">Admin · Quản lý ảnh cưới</div>
@@ -56,7 +42,6 @@ export default async function AdminLayout({
 
         <main className="container mx-auto w-full max-w-[1400px] flex-1 p-4 lg:p-6">
           {children}
-          {/* Toaster là client component, an toàn khi render trong server layout */}
           <Toaster position="top-center" richColors />
         </main>
       </div>
