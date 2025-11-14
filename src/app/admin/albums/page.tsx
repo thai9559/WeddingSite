@@ -39,23 +39,19 @@ function errorMessage(err: unknown): string {
 }
 
 /* ============================================================
-   UI HELPERS
+   UI HELPERS – FULLSCREEN LOADER
    ============================================================ */
 const FullscreenLoader = ({ text }: { text?: string }) => (
-  <div className="fixed inset-0 z-[100] grid place-items-center bg-black/30 backdrop-blur-sm">
+  <div className="fixed inset-0 z-[200] grid place-items-center bg-black/40 backdrop-blur-sm">
     <div className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-lg">
-      <Loader2 className="h-5 w-5 animate-spin" />
-      <span className="text-sm font-medium">{text ?? "Đang xử lý..."}</span>
+      <Loader2 className="h-6 w-6 animate-spin" />
+      <span className="text-[15px] font-medium">{text ?? "Đang xử lý..."}</span>
     </div>
   </div>
 );
 
-const SkeletonCard = () => (
-  <div className="aspect-[4/3] w-full rounded border bg-neutral-200/70 animate-pulse" />
-);
-
 /* ============================================================
-   CHECK FILE EXIST – CLEAN ORPHAN DB ROWS
+   CHECK FILE EXIST – CLEAN ORPHANS
    ============================================================ */
 async function checkFileExists(path: string): Promise<boolean> {
   const supabase = supabaseBrowser();
@@ -67,7 +63,6 @@ async function checkFileExists(path: string): Promise<boolean> {
 
 async function pruneOrphans(rows: AlbumImage[]): Promise<AlbumImage[]> {
   const supabase = supabaseBrowser();
-
   const checks = await Promise.all(
     rows.map(async (r) => {
       const path = extractStoragePathFromUrl(r.url);
@@ -78,18 +73,18 @@ async function pruneOrphans(rows: AlbumImage[]): Promise<AlbumImage[]> {
   );
 
   const orphanIds = checks.filter((c) => !c.ok).map((c) => c.r.id);
-  const validRows = checks.filter((c) => c.ok).map((c) => c.r);
+  const valid = checks.filter((c) => c.ok).map((c) => c.r);
 
   if (orphanIds.length) {
     await supabase.from("images").delete().in("id", orphanIds);
-    console.log("🔥 CLEAN ORPHAN ROWS", orphanIds);
+    console.log("🔥 CLEAN ORPHAN ROWS:", orphanIds);
   }
 
-  return validRows;
+  return valid;
 }
 
 /* ============================================================
-   PAGE
+   MAIN PAGE
    ============================================================ */
 export default function AdminUploadPage() {
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -101,6 +96,7 @@ export default function AdminUploadPage() {
   const [filePreviews, setFilePreviews] = useState<
     { name: string; size: number; url: string }[]
   >([]);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   const filesInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -111,6 +107,7 @@ export default function AdminUploadPage() {
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState("");
 
+  const [confirmUpload, setConfirmUpload] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const selectedAlbum = useMemo(
@@ -128,12 +125,13 @@ export default function AdminUploadPage() {
         .from("albums")
         .select("id, key, title")
         .order("id");
+
       setAlbums((data as Album[]) ?? []);
     })();
   }, []);
 
   /* ============================================================
-     FETCH IMAGES + CLEAN ORPHANS
+     FETCH ALBUM IMAGES
      ============================================================ */
   const fetchImages = useCallback(async (albumId: number) => {
     const supabase = supabaseBrowser();
@@ -143,20 +141,21 @@ export default function AdminUploadPage() {
       .eq("album_id", albumId)
       .order("sort", { ascending: true, nullsFirst: true })
       .order("id");
+
     return (data as AlbumImage[]) ?? [];
   }, []);
 
   const reloadImages = useCallback(
     async (idStr: string) => {
       setLoadingImages(true);
+
       try {
         const id = Number(idStr);
-        if (!id) {
-          setImages([]);
-          return;
-        }
+        if (!id) return;
+
         let rows = await fetchImages(id);
         rows = await pruneOrphans(rows);
+
         setImages(rows);
       } finally {
         setLoadingImages(false);
@@ -170,7 +169,7 @@ export default function AdminUploadPage() {
   }, [selectedAlbumId, reloadImages]);
 
   /* ============================================================
-     HANDLE COVER
+     HANDLE COVER CHANGE
      ============================================================ */
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -188,11 +187,14 @@ export default function AdminUploadPage() {
   };
 
   /* ============================================================
-     HANDLE MULTIPLE IMAGES
+     HANDLE FILES PREVIEW (with centered loading)
      ============================================================ */
   const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = Array.from(e.target.files ?? []);
     const input: File[] = raw.filter((x): x is File => x instanceof File);
+    if (!input.length) return;
+
+    setLoadingPreview(true);
 
     const processed: File[] = [];
     const previews: { name: string; size: number; url: string }[] = [];
@@ -216,6 +218,7 @@ export default function AdminUploadPage() {
 
     setFiles(processed);
     setFilePreviews(previews);
+    setLoadingPreview(false);
   };
 
   const removePreview = (i: number) => {
@@ -231,7 +234,7 @@ export default function AdminUploadPage() {
   /* ============================================================
      DELETE ONE IMAGE
      ============================================================ */
-  async function handleDeleteOne(img: AlbumImage): Promise<void> {
+  async function handleDeleteOne(img: AlbumImage) {
     if (!selectedAlbum) return;
 
     try {
@@ -240,10 +243,11 @@ export default function AdminUploadPage() {
       setBusyText("Đang xoá ảnh…");
 
       await deleteAlbumImageAction(img.id, img.url);
+
       setImages((prev) => prev.filter((x) => x.id !== img.id));
       toast.success("Đã xoá ảnh");
     } catch (err) {
-      toast.error("Xoá ảnh thất bại", { description: errorMessage(err) });
+      toast.error("Lỗi xoá ảnh", { description: errorMessage(err) });
     } finally {
       setDeletingId(null);
       setBusy(false);
@@ -252,9 +256,9 @@ export default function AdminUploadPage() {
   }
 
   /* ============================================================
-     SUBMIT UPLOAD (MUST RETURN Promise<void>)
+     UPLOAD CONFIRMATION + UPLOAD PROCESS
      ============================================================ */
-  const handleSubmit = async (formData: FormData): Promise<void> => {
+  const startUpload = async () => {
     if (!selectedAlbumId) {
       toast.error("Chưa chọn album");
       return;
@@ -263,41 +267,42 @@ export default function AdminUploadPage() {
     setBusy(true);
     setBusyText("Đang upload…");
 
+    const formData = new FormData();
     if (cover) formData.append("cover", cover);
     files.forEach((f) => formData.append("files", f));
     formData.append("albumId", selectedAlbumId);
 
-    const res = await uploadAlbumAction(formData);
+    try {
+      const res = await uploadAlbumAction(formData);
 
-    toast.success("Upload thành công", {
-      description: `${res.uploaded.length} ảnh`,
-    });
+      toast.success("Upload thành công", {
+        description: `${res.uploaded.length} ảnh`,
+      });
 
-    setCover(null);
-    setFiles([]);
-    setFilePreviews([]);
+      setCover(null);
+      setFiles([]);
+      setFilePreviews([]);
 
-    await reloadImages(selectedAlbumId);
+      await reloadImages(selectedAlbumId);
+    } catch (err) {
+      toast.error("Upload thất bại", { description: errorMessage(err) });
+    }
+
     setBusy(false);
   };
 
   /* ============================================================
-     RENDER
+     RENDER UI
      ============================================================ */
   return (
     <main className="mx-auto max-w-5xl p-6">
+      {/* GLOBAL LOADER */}
       {busy && <FullscreenLoader text={busyText} />}
 
       <h1 className="text-2xl font-semibold">Admin · Upload ảnh album</h1>
 
       {/* FORM UPLOAD */}
-      <form
-        className="mt-6 space-y-5"
-        action={async (fd: FormData) => {
-          await handleSubmit(fd);
-          return;
-        }}
-      >
+      <form className="mt-6 space-y-5" onSubmit={(e) => e.preventDefault()}>
         {/* ALBUM SELECT */}
         <div>
           <label className="text-xs font-medium">Chọn album</label>
@@ -315,7 +320,7 @@ export default function AdminUploadPage() {
           </select>
         </div>
 
-        {/* COVER + MULTI IMAGES */}
+        {/* COVER + MULTI IMAGE UPLOAD */}
         <div className="grid gap-4 sm:grid-cols-2">
           {/* COVER */}
           <div>
@@ -327,6 +332,7 @@ export default function AdminUploadPage() {
               onChange={handleCoverChange}
               className="mt-1 w-full p-2 border rounded"
             />
+
             {cover && (
               <p className="text-xs mt-1">
                 {cover.name} — {(cover.size / 1024).toFixed(1)} KB
@@ -334,25 +340,25 @@ export default function AdminUploadPage() {
             )}
           </div>
 
-          {/* ALBUM IMAGES */}
+          {/* ALBUM IMAGES + PREVIEW */}
           <div>
             <label className="text-xs font-medium">Ảnh album</label>
-            <input
-              type="file"
-              accept="image/*"
-              ref={filesInputRef}
-              multiple
-              onChange={handleFilesChange}
-              className="mt-1 w-full p-2 border rounded"
-            />
 
-            {!!filePreviews.length && (
-              <>
-                <p className="text-xs mt-1">
-                  {filePreviews.length} ảnh đã chọn
-                </p>
+            {/* RELATIVE WRAPPER FOR PERFECT LOADING CENTER */}
+            <div className="relative mt-1">
+              {/* input */}
+              <input
+                type="file"
+                accept="image/*"
+                ref={filesInputRef}
+                multiple
+                onChange={handleFilesChange}
+                className="w-full p-2 border rounded"
+              />
 
-                <div className="grid grid-cols-2 gap-3 mt-2 sm:grid-cols-3 md:grid-cols-4">
+              {/* preview grid */}
+              {!!filePreviews.length && (
+                <div className="grid grid-cols-2 gap-3 mt-3 sm:grid-cols-3 md:grid-cols-4">
                   {filePreviews.map((p, i) => (
                     <div
                       key={p.name + i}
@@ -378,34 +384,85 @@ export default function AdminUploadPage() {
                     </div>
                   ))}
                 </div>
-              </>
-            )}
+              )}
+
+              {/* PERFECT CENTERED PREVIEW LOADING */}
+              {loadingPreview && (
+                <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center rounded z-20">
+                  <Loader2 className="animate-spin w-8 h-8 text-neutral-600" />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <button className="px-4 py-2 bg-black text-white rounded">
+        {/* UPLOAD BUTTON */}
+        <button
+          type="button"
+          className="px-4 py-2 bg-black text-white rounded"
+          onClick={() => {
+            if (!files.length && !cover) {
+              toast.error("Bạn chưa chọn ảnh");
+              return;
+            }
+            setConfirmUpload(true);
+          }}
+        >
           Upload
         </button>
       </form>
 
-      {/* LIST IMAGES */}
-      <section className="mt-10">
+      {/* GALLERY */}
+      <section className="mt-10 min-h-[420px]">
         <h2 className="text-lg font-semibold">Ảnh trong album</h2>
 
-        {loadingImages ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
-        ) : (
+        <div className="relative mt-3">
+          {/* grid ảnh thật */}
           <AdminAlbumImages
             images={images}
             onDelete={handleDeleteOne}
             deletingId={deletingId}
           />
-        )}
+
+          {/* loading overlay */}
+          {loadingImages && (
+            <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-20">
+              <Loader2 className="animate-spin w-8 h-8 text-neutral-600" />
+            </div>
+          )}
+        </div>
       </section>
+
+      {/* CONFIRM UPLOAD POPUP */}
+      {confirmUpload && (
+        <div className="fixed inset-0 bg-black/40 z-[300] flex items-center justify-center">
+          <div className="bg-white rounded-xl p-6 w-[90%] max-w-sm shadow-xl text-center">
+            <p className="font-medium text-lg">Xác nhận upload?</p>
+            <p className="text-sm text-neutral-500 mt-2">
+              Bạn sắp upload {files.length} ảnh.
+            </p>
+
+            <div className="flex gap-3 mt-5 justify-center">
+              <button
+                className="px-4 py-2 rounded border"
+                onClick={() => setConfirmUpload(false)}
+              >
+                Hủy
+              </button>
+
+              <button
+                className="px-4 py-2 rounded bg-black text-white"
+                onClick={async () => {
+                  setConfirmUpload(false);
+                  await startUpload();
+                }}
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

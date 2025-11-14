@@ -24,6 +24,9 @@ type Video = {
 
 const BUCKET = "wedding";
 
+/* ==========================
+   FULLSCREEN LOADER
+========================== */
 const FullscreenLoader = ({ text }: { text?: string }) => (
   <div className="fixed inset-0 z-[100] grid place-items-center bg-black/30 backdrop-blur-sm">
     <div className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-lg">
@@ -33,23 +36,32 @@ const FullscreenLoader = ({ text }: { text?: string }) => (
   </div>
 );
 
+/* ==========================
+   SKELETON
+========================== */
 const SkeletonCard = () => (
   <div className="aspect-video w-full animate-pulse rounded-lg border bg-neutral-200/70" />
 );
 
 export default function VideosPage() {
   const [activeTab, setActiveTab] = useState<VideoType>("prewedding");
+
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState("");
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
+
   const [videoUrl, setVideoUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const supabase = useMemo(() => supabaseBrowser(), []);
 
-  // 🔹 Load videos list
+  /* ==========================
+     LOAD VIDEO LIST
+  ========================== */
   const loadVideos = useCallback(
     async (type: VideoType) => {
       setLoading(true);
@@ -68,31 +80,30 @@ export default function VideosPage() {
           throw error;
         }
 
-        // lấy các file .txt và đọc nội dung (url thật)
         const txtFiles = (files || []).filter((f) => f.name.endsWith(".txt"));
 
-        const videoList: Video[] = [];
-        for (const f of txtFiles) {
-          const path = `videos/${type}/${f.name}`;
-          const { data: content } = await supabase.storage
-            .from(BUCKET)
-            .download(path);
-          let url = "";
-          if (content) {
-            url = await content.text();
-          }
-          const id =
-            extractYouTubeId(url) ||
-            extractVimeoId(url) ||
-            f.name.replace(".txt", "");
-          videoList.push({
-            video_id: id,
-            type,
-            url,
-            path,
-            created_at: f.created_at || new Date().toISOString(),
-          });
-        }
+        const videoList = await Promise.all(
+          txtFiles.map(async (f) => {
+            const path = `videos/${type}/${f.name}`;
+            const { data: content } = await supabase.storage
+              .from(BUCKET)
+              .download(path);
+
+            const url = content ? await content.text() : "";
+            const id =
+              extractYouTubeId(url) ||
+              extractVimeoId(url) ||
+              f.name.replace(".txt", "");
+
+            return {
+              video_id: id,
+              type,
+              url,
+              path,
+              created_at: f.created_at ?? new Date().toISOString(),
+            };
+          })
+        );
 
         setVideos(videoList);
       } catch (err: any) {
@@ -104,11 +115,16 @@ export default function VideosPage() {
     [supabase]
   );
 
+  /* ==========================
+     INIT LOAD (KHÔNG RETURN TRƯỚC HOOK!)
+  ========================== */
   useEffect(() => {
-    loadVideos(activeTab);
+    loadVideos(activeTab).finally(() => setInitialized(true));
   }, [activeTab, loadVideos]);
 
-  // 🔹 Thêm video
+  /* ==========================
+     ADD VIDEO
+  ========================== */
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (isSubmitting || !videoUrl.trim()) return;
@@ -142,9 +158,12 @@ export default function VideosPage() {
     }
   };
 
-  // 🔹 Xoá video
+  /* ==========================
+     DELETE VIDEO
+  ========================== */
   const handleDelete = async (video: Video) => {
     if (deletingPath !== null) return;
+
     setDeletingPath(video.path);
     setBusy(true);
     setBusyText("Đang xóa video...");
@@ -164,6 +183,13 @@ export default function VideosPage() {
 
   const videoType = useMemo(() => getVideoType(videoUrl), [videoUrl]);
 
+  /* ==========================
+     RETURN UI (TỪ ĐÂY TRỞ XUỐNG)
+  ========================== */
+  if (!initialized) {
+    return <FullscreenLoader text="Đang tải video..." />;
+  }
+
   return (
     <main className="mx-auto max-w-6xl p-6">
       {busy && <FullscreenLoader text={busyText} />}
@@ -173,7 +199,7 @@ export default function VideosPage() {
         Thêm link YouTube hoặc Vimeo để hiển thị video trên website.
       </p>
 
-      {/* Tabs */}
+      {/* TABS */}
       <div className="mb-6 flex gap-2 border-b">
         {["prewedding", "wedding"].map((tab) => (
           <button
@@ -190,22 +216,18 @@ export default function VideosPage() {
         ))}
       </div>
 
-      {/* Form thêm video */}
+      {/* FORM */}
       <section className="mb-8 rounded-lg border bg-white p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label
-              htmlFor="video-url"
-              className="block text-sm font-medium mb-2"
-            >
+            <label className="block text-sm font-medium mb-2">
               Link Video (YouTube hoặc Vimeo)
             </label>
             <input
-              id="video-url"
               type="text"
               value={videoUrl}
               onChange={(e) => setVideoUrl(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=... hoặc https://vimeo.com/..."
+              placeholder="https://youtube.com/... hoặc https://vimeo.com/..."
               className="w-full rounded border px-3 py-2"
               disabled={isSubmitting}
             />
@@ -222,7 +244,7 @@ export default function VideosPage() {
           </div>
 
           {videoUrl && videoType !== "unknown" && (
-            <div className="rounded-lg border p-4 bg-neutral-50">
+            <div className="rounded-lg border p-4 bg-neutral-50 min-h-[220px]">
               <p className="text-xs font-medium mb-2 text-neutral-600">
                 Preview:
               </p>
@@ -255,12 +277,13 @@ export default function VideosPage() {
         </form>
       </section>
 
-      {/* Danh sách videos */}
-      <section>
+      {/* VIDEO LIST */}
+      <section className="min-h-[420px]">
         <h2 className="text-lg font-semibold mb-4">
           Danh sách video ({videos.length})
         </h2>
 
+        {/* LOADING */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -269,9 +292,10 @@ export default function VideosPage() {
           </div>
         ) : videos.length === 0 ? (
           <div className="rounded-lg border border-dashed p-12 text-center text-neutral-500">
-            <p>Chưa có video nào. Hãy thêm video đầu tiên!</p>
+            Chưa có video nào. Hãy thêm video đầu tiên!
           </div>
         ) : (
+          /* LIST CONTENT */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {videos.map((video) => {
               const type = getVideoType(video.url);
@@ -318,7 +342,6 @@ export default function VideosPage() {
                       onClick={() => handleDelete(video)}
                       disabled={deletingPath === video.path}
                       className="absolute top-2 right-2 rounded-full bg-black/70 p-2 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 disabled:opacity-50"
-                      title="Xóa video"
                     >
                       {deletingPath === video.path ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
