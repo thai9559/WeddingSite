@@ -167,12 +167,12 @@ export default function RSVPForm() {
 
         {/* thành công: chỉ hiện nút quay về */}
         {ok ? (
-          <div className="px-6 pb-6 pt-2">
+          <div className="px-6 pb-8 pt-4 text-center space-y-4">
             <Link
               href="/"
-              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border-2 border-[#8b6b4a] bg-[#b18b52] px-5 py-2.5 text-[#fdf7ec] shadow-[3px_3px_0_#8b6b4a] transition-transform active:translate-y-[1px] font-[var(--font-garamond)]"
+              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border-2 border-[#8b6b4a] bg-[#b18b52] px-6 py-3 text-[#fdf7ec] shadow-[4px_4px_0_#8b6b4a] transition-transform hover:translate-y-[-1px] active:translate-y-[1px] font-[var(--font-garamond)] text-sm tracking-wide"
             >
-              ⟵ Quay về trang chính
+              ⟵ Về trang chủ
             </Link>
           </div>
         ) : (

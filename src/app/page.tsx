@@ -30,6 +30,9 @@ export default function Home() {
         setShowIntro(true);
       }, 100);
     }
+    //     setTimeout(() => {
+    //   setShowIntro(true);
+    // }, 100);
   }, []);
 
   const handleIntroComplete = () => {
@@ -38,7 +41,11 @@ export default function Home() {
     }
     setShowIntro(false);
   };
+  // Sau khi xong roi thi moi open len
+  // const handleIntroComplete = () => {
 
+  //   setShowIntro(false);
+  // };
   return (
     <>
       {showIntro && <WeddingIntro onComplete={handleIntroComplete} />}
@@ -56,7 +63,7 @@ export default function Home() {
             Đăng ký tham dự 💌
           </Link>
           <p className="mt-3 text-xs text-neutral-400">
-            Vui lòng xác nhận giúp tụi mình trước ngày 01/11 nhé 💐
+            Vui lòng xác nhận giúp tụi mình trước ngày 30/11 nhé 💐
           </p>
 
           <div className="absolute -z-10 inset-0 flex justify-center items-center opacity-20">
