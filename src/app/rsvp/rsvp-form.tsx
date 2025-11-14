@@ -2,6 +2,35 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import confetti from "canvas-confetti";
+// 🎉 Hiệu ứng pháo hoa 2.5 giây
+
+function romanticGlitter() {
+  const end = Date.now() + 3000;
+
+  (function frame() {
+    confetti({
+      particleCount: 3,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0, y: 0.7 },
+      colors: ["#ffe6f7", "#ffcfdf", "#f9e2ae"],
+      scalar: 0.9,
+      zIndex: 9999,
+    });
+    confetti({
+      particleCount: 3,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1, y: 0.7 },
+      colors: ["#ffe6f7", "#ffcfdf", "#f9e2ae"],
+      scalar: 0.9,
+      zIndex: 9999,
+    });
+
+    if (Date.now() < end) requestAnimationFrame(frame);
+  })();
+}
 
 type RelationKey =
   | "bride_friend"
@@ -116,6 +145,7 @@ export default function RSVPForm() {
         setErr(json.error || "Gửi thất bại.");
       } else {
         setOk("Đăng ký thành công! Hẹn gặp bạn tại đám cưới 💖");
+        romanticGlitter();
       }
     } catch (err: unknown) {
       const msg =
