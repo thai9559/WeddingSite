@@ -1,29 +1,50 @@
 "use server";
 
+import { createClient } from "@supabase/supabase-js";
 import { createServerActionClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 
 const BUCKET = "wedding";
 
 /* ============================================================
-   Helpers
+   SUPABASE CLIENTS
+   ============================================================ */
+
+// Auth client (dùng session user)
+function supabaseAuth() {
+    return createServerActionClient({ cookies: () => cookies() });
+}
+
+// Admin client (dùng service role key)
+function supabaseAdmin() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+    if (!key) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+
+    return createClient(url, key, {
+        auth: { persistSession: false },
+    });
+}
+
+/* ============================================================
+   HELPERS
    ============================================================ */
 function inferExt(file: File): string {
-    const name = file.name || "";
-    const lower = name.toLowerCase();
-    if (file.type === "image/webp" || lower.endsWith(".webp")) return "webp";
-    if (file.type === "image/png" || lower.endsWith(".png")) return "png";
-    if (file.type === "image/jpeg" || lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "jpg";
-    if (file.type === "image/gif" || lower.endsWith(".gif")) return "gif";
+    const name = file.name.toLowerCase();
+    if (file.type === "image/webp" || name.endsWith(".webp")) return "webp";
+    if (file.type === "image/png" || name.endsWith(".png")) return "png";
+    if (file.type === "image/gif" || name.endsWith(".gif")) return "gif";
     return "jpg";
 }
 
-function inferContentType(ext: string, fallback?: string): string {
+function inferContentType(ext: string): string {
     switch (ext) {
         case "webp": return "image/webp";
         case "png": return "image/png";
         case "gif": return "image/gif";
-        default: return fallback || "image/jpeg";
+        default: return "image/jpeg";
     }
 }
 
@@ -36,8 +57,10 @@ function safeBaseName(name: string): string {
    UPLOAD ACTION
    ============================================================ */
 export async function uploadAlbumAction(formData: FormData) {
-    const supabase = createServerActionClient({ cookies });
+    const supabase = supabaseAuth();
+    const admin = supabaseAdmin();
 
+    // Session
     const {
         data: { session },
         error: sessionErr,
@@ -48,66 +71,65 @@ export async function uploadAlbumAction(formData: FormData) {
 
     const userId = session.user.id;
 
-    const albumId = parseInt(String(formData.get("albumId") || ""), 10);
-    if (!albumId || Number.isNaN(albumId)) throw new Error("Sai album ID.");
+    const albumId = parseInt(String(formData.get("albumId")), 10);
+    if (!albumId) throw new Error("Sai album ID");
 
     const files = formData.getAll("files") as File[];
     const cover = formData.get("cover") as File | null;
 
-    const uploaded: string[] = [];
-    const errors: any[] = [];
-
     // Lấy album key
-    const { data: album, error: albumErr } = await supabase
+    const { data: album, error: albumErr } = await admin
         .from("albums")
         .select("key")
         .eq("id", albumId)
         .single();
 
-    if (albumErr || !album?.key) throw new Error("Không tìm thấy album.");
+    if (albumErr || !album?.key) throw new Error("Không tìm thấy album");
     const albumKey = album.key;
 
-    /* ==================== COVER ==================== */
+    const uploaded: string[] = [];
+    const errors: any[] = [];
+
+    /* Upload COVER */
     if (cover) {
         const ext = inferExt(cover);
-        const safeName = `${Date.now()}-${safeBaseName(cover.name)}.${ext}`;
-        const path = `cover/${safeName}`;
+        const path = `cover/${Date.now()}-${safeBaseName(cover.name)}.${ext}`;
 
-        const { data, error } = await supabase.storage
+        const { data, error } = await admin.storage
             .from(BUCKET)
             .upload(path, cover, {
-                contentType: inferContentType(ext, cover.type),
+                contentType: inferContentType(ext),
                 upsert: true,
             });
 
-        if (error || !data) errors.push(error);
-        else {
-            const coverUrl = supabase.storage.from(BUCKET).getPublicUrl(data.path).data.publicUrl;
-            await supabase.from("albums").update({ cover_url: coverUrl }).eq("id", albumId);
+        if (error) {
+            errors.push(error);
+        } else {
+            const coverUrl = admin.storage.from(BUCKET).getPublicUrl(data.path).data.publicUrl;
+            await admin.from("albums").update({ cover_url: coverUrl }).eq("id", albumId);
         }
     }
 
-    /* ==================== ALBUM IMAGES ==================== */
+    /* Upload album images */
     for (const file of files) {
         const ext = inferExt(file);
-        const safeName = `${Date.now()}-${safeBaseName(file.name)}.${ext}`;
-        const path = `albums/${albumKey}/${safeName}`;
+        const path = `albums/${albumKey}/${Date.now()}-${safeBaseName(file.name)}.${ext}`;
 
-        const { data, error } = await supabase.storage
+        const { data, error } = await admin.storage
             .from(BUCKET)
             .upload(path, file, {
-                contentType: inferContentType(ext, file.type),
+                contentType: inferContentType(ext),
                 upsert: true,
             });
 
-        if (error || !data) {
+        if (error) {
             errors.push(error);
             continue;
         }
 
-        const url = supabase.storage.from(BUCKET).getPublicUrl(data.path).data.publicUrl;
+        const url = admin.storage.from(BUCKET).getPublicUrl(data.path).data.publicUrl;
 
-        await supabase.from("images").insert({
+        await admin.from("images").insert({
             album_id: albumId,
             owner_id: userId,
             url,
@@ -120,11 +142,13 @@ export async function uploadAlbumAction(formData: FormData) {
 }
 
 /* ============================================================
-   DELETE ACTION (Storage + DB)
+   DELETE ACTION
    ============================================================ */
 export async function deleteAlbumImageAction(imageId: number, imageUrl: string) {
-    const supabase = createServerActionClient({ cookies });
+    const supabase = supabaseAuth();
+    const admin = supabaseAdmin();
 
+    // Check session
     const {
         data: { session },
         error: sessionErr,
@@ -133,29 +157,24 @@ export async function deleteAlbumImageAction(imageId: number, imageUrl: string) 
     if (sessionErr) throw new Error(sessionErr.message);
     if (!session) throw new Error("Bạn cần đăng nhập.");
 
+    // Extract path
     const marker = `/object/public/${BUCKET}/`;
-    const idx = imageUrl.indexOf(marker);
-    if (idx === -1) throw new Error("Không trích được path từ URL");
+    const i = imageUrl.indexOf(marker);
+    if (i === -1) throw new Error("Không trích được path từ URL");
 
-    const path = decodeURIComponent(imageUrl.slice(idx + marker.length).split("?")[0]);
+    const path = decodeURIComponent(imageUrl.slice(i + marker.length).split("?")[0]);
 
-    // XÓA STORAGE
-    const { error: sErr } = await supabase.storage.from(BUCKET).remove([path]);
-    if (sErr) {
-        const msg = sErr.message?.toLowerCase() || "";
-        const is404 =
-            msg.includes("no such file") ||
-            msg.includes("not found") ||
-            msg.includes("object not found");
-
-        if (!is404) {
-            throw new Error("Lỗi xoá file: " + sErr.message);
-        }
+    // Delete storage
+    const { error: sErr } = await admin.storage.from(BUCKET).remove([path]);
+    if (sErr && !sErr.message.toLowerCase().includes("not found")) {
+        throw new Error("Lỗi xoá file: " + sErr.message);
     }
 
+    // Delete DB
+    const { error: dbErr } = await admin.from("images")
+        .delete()
+        .eq("id", imageId);
 
-    // XÓA DB ROW
-    const { error: dbErr } = await supabase.from("images").delete().eq("id", imageId);
     if (dbErr) throw new Error("Lỗi xoá DB: " + dbErr.message);
 
     return { ok: true };

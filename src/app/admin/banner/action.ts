@@ -1,88 +1,111 @@
 "use server";
 
-import { cookies } from "next/headers";
-import { createServerActionClient } from "@supabase/auth-helpers-nextjs";
+import { createClient } from "@supabase/supabase-js";
 
 const BUCKET = "wedding";
 
-function sanitizeName(name: string) {
-    return (name || "unnamed").replace(/[^a-zA-Z0-9.\-_]/g, "_");
+/* ============================================================
+   SUPABASE ADMIN CLIENT (Service Role)
+   ============================================================ */
+function supabaseAdmin() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY; // 🔥 phải đúng tên này
+
+    if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+    if (!key) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+
+    return createClient(url, key, {
+        auth: { persistSession: false },
+    });
 }
 
+/* ============================================================
+   UPLOAD BANNER
+   ============================================================ */
 export async function uploadBannerAction(formData: FormData) {
-    const supabase = createServerActionClient({ cookies });
+    const admin = supabaseAdmin();
 
-    const {
-        data: { session },
-        error: sessionErr,
-    } = await supabase.auth.getSession();
-    if (sessionErr) throw sessionErr;
-    if (!session) throw new Error("Bạn cần đăng nhập.");
+    const location = String(formData.get("location") || "hero");
+    const device = String(formData.get("device") || "pc") as "pc" | "mobile";
 
-    const locationRaw = String(formData.get("location") || "").trim().toLowerCase();
-    const deviceRaw = String(formData.get("device") || "").trim().toLowerCase();
-    const location = locationRaw || "hero";
-    const device: "pc" | "mobile" = deviceRaw === "mobile" ? "mobile" : "pc";
+    const files = formData.getAll("files") as File[];
+    if (!files.length)
+        return { ok: false, uploaded: 0, detail: { errors: [] } };
 
-    const files = (formData.getAll("files") as File[]).filter(Boolean);
-    if (!files.length) return { ok: true, uploaded: 0, detail: { errors: [] } };
-
-    const attemptPaths: string[] = [];
-    const uploadedPublicUrls: string[] = [];
+    const uploadedUrls: string[] = [];
     const errors: { name: string; message: string; path?: string }[] = [];
 
     for (const file of files) {
-        const safeName = sanitizeName(file.name || "image");
+        const safeName = (file.name || "image").replace(/[^a-zA-Z0-9.\-_]/g, "_");
         const path = `banners/${location}/${device}/${Date.now()}-${safeName}`;
-        attemptPaths.push(path);
 
-        // 1) Upload file vào Storage
-        const { error: upErr } = await supabase.storage
+        // 1) Upload lên Storage
+        const { error: upErr } = await admin.storage
             .from(BUCKET)
             .upload(path, file, {
-                contentType: file.type || "image/jpeg",
+                contentType: file.type || "image/webp",
                 upsert: false,
             });
+
         if (upErr) {
-            errors.push({ name: file.name, message: upErr.message, path });
+            errors.push({ name: file.name, message: upErr.message });
             continue;
         }
 
-        // 2) Tạo URL để thỏa NOT NULL (public hoặc fallback = path)
-        //    - Public bucket: dùng publicUrl.
-        //    - Private bucket: tránh lưu signed URL (hết hạn), ta lưu 'path' (không-null)
-        //      và UI sẽ tự tạo signed khi render.
-        const { data: pu } = supabase.storage.from(BUCKET).getPublicUrl(path);
-        const nonNullUrl = pu?.publicUrl || path; // luôn không-null
+        // 2) Lấy public URL (hoặc fallback path)
+        const { data: pu } = admin.storage.from(BUCKET).getPublicUrl(path);
+        const publicUrl = pu?.publicUrl ?? path;
 
-        // 3) Ghi DB — BỔ SUNG 'url' để tránh lỗi NOT NULL
-        const { error: dbErr } = await supabase
-            .from("banner_images")
-            .insert({ path, location, device, url: nonNullUrl });
+        // 3) Insert DB
+        const { error: dbErr } = await admin.from("banner_images").insert({
+            path,
+            location,
+            device,
+            url: publicUrl, // tránh NOT NULL error
+        });
 
         if (dbErr) {
-            // rollback file trong Storage để tránh orphan
-            const { error: rmErr } = await supabase.storage.from(BUCKET).remove([path]);
-            if (rmErr) {
-                // vẫn báo lỗi gốc + lỗi remove (nếu có)
-                errors.push({
-                    name: file.name,
-                    path,
-                    message: `${dbErr.message} (rollback storage error: ${rmErr.message})`,
-                });
-            } else {
-                errors.push({ name: file.name, path, message: dbErr.message });
-            }
+            // rollback Storage
+            await admin.storage.from(BUCKET).remove([path]);
+            errors.push({ name: file.name, message: dbErr.message });
             continue;
         }
 
-        uploadedPublicUrls.push(nonNullUrl);
+        uploadedUrls.push(publicUrl);
     }
 
     return {
         ok: errors.length === 0,
-        uploaded: uploadedPublicUrls.length,
-        attemptPaths,
-        detail: { uploaded: uploadedPublicUrls, errors, location, device, bucket: BUCKET },
+        uploaded: uploadedUrls.length,
+        detail: {
+            uploaded: uploadedUrls,
+            errors,
+            location,
+            device,
+        },
+    };
+}
+
+/* ============================================================
+   DELETE BANNER (XOÁ STORAGE + DB)
+   ============================================================ */
+export async function deleteBannerAction(id: number, path: string) {
+    const admin = supabaseAdmin();
+
+    // Xóa file trong Storage
+    const { error: storageErr } = await admin.storage
+        .from(BUCKET)
+        .remove([path]);
+
+    // Xóa DB
+    const { error: dbErr } = await admin
+        .from("banner_images")
+        .delete()
+        .eq("id", id);
+
+    return {
+        ok: !storageErr && !dbErr,
+        storageErr,
+        dbErr,
     };
 }

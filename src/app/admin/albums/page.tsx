@@ -21,23 +21,6 @@ type AlbumImage = {
   sort?: number | null;
 };
 
-const BUCKET = "wedding";
-
-/* ============================================================
-   HELPERS
-   ============================================================ */
-function extractStoragePathFromUrl(publicUrl: string): string | null {
-  const marker = `/object/public/${BUCKET}/`;
-  const idx = publicUrl.indexOf(marker);
-  if (idx === -1) return null;
-  return decodeURIComponent(publicUrl.slice(idx + marker.length).split("?")[0]);
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
-}
-
 /* ============================================================
    UI HELPERS – FULLSCREEN LOADER
    ============================================================ */
@@ -49,39 +32,6 @@ const FullscreenLoader = ({ text }: { text?: string }) => (
     </div>
   </div>
 );
-
-/* ============================================================
-   CHECK FILE EXIST – CLEAN ORPHANS
-   ============================================================ */
-async function checkFileExists(path: string): Promise<boolean> {
-  const supabase = supabaseBrowser();
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(path, 30);
-  return !!data?.signedUrl && !error;
-}
-
-async function pruneOrphans(rows: AlbumImage[]): Promise<AlbumImage[]> {
-  const supabase = supabaseBrowser();
-  const checks = await Promise.all(
-    rows.map(async (r) => {
-      const path = extractStoragePathFromUrl(r.url);
-      if (!path) return { r, ok: false };
-      const ok = await checkFileExists(path).catch(() => false);
-      return { r, ok };
-    })
-  );
-
-  const orphanIds = checks.filter((c) => !c.ok).map((c) => c.r.id);
-  const valid = checks.filter((c) => c.ok).map((c) => c.r);
-
-  if (orphanIds.length) {
-    await supabase.from("images").delete().in("id", orphanIds);
-    console.log("🔥 CLEAN ORPHAN ROWS:", orphanIds);
-  }
-
-  return valid;
-}
 
 /* ============================================================
    MAIN PAGE
@@ -148,14 +98,11 @@ export default function AdminUploadPage() {
   const reloadImages = useCallback(
     async (idStr: string) => {
       setLoadingImages(true);
-
       try {
         const id = Number(idStr);
         if (!id) return;
 
-        let rows = await fetchImages(id);
-        rows = await pruneOrphans(rows);
-
+        const rows = await fetchImages(id);
         setImages(rows);
       } finally {
         setLoadingImages(false);
@@ -187,7 +134,7 @@ export default function AdminUploadPage() {
   };
 
   /* ============================================================
-     HANDLE FILES PREVIEW (with centered loading)
+     FILE PREVIEW
      ============================================================ */
   const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = Array.from(e.target.files ?? []);
@@ -246,8 +193,8 @@ export default function AdminUploadPage() {
 
       setImages((prev) => prev.filter((x) => x.id !== img.id));
       toast.success("Đã xoá ảnh");
-    } catch (err) {
-      toast.error("Lỗi xoá ảnh", { description: errorMessage(err) });
+    } catch (err: any) {
+      toast.error("Lỗi xoá ảnh", { description: err.message || String(err) });
     } finally {
       setDeletingId(null);
       setBusy(false);
@@ -256,7 +203,7 @@ export default function AdminUploadPage() {
   }
 
   /* ============================================================
-     UPLOAD CONFIRMATION + UPLOAD PROCESS
+     UPLOAD PROCESS
      ============================================================ */
   const startUpload = async () => {
     if (!selectedAlbumId) {
@@ -284,8 +231,10 @@ export default function AdminUploadPage() {
       setFilePreviews([]);
 
       await reloadImages(selectedAlbumId);
-    } catch (err) {
-      toast.error("Upload thất bại", { description: errorMessage(err) });
+    } catch (err: any) {
+      toast.error("Upload thất bại", {
+        description: err.message || String(err),
+      });
     }
 
     setBusy(false);
@@ -296,14 +245,13 @@ export default function AdminUploadPage() {
      ============================================================ */
   return (
     <main className="mx-auto max-w-5xl p-6">
-      {/* GLOBAL LOADER */}
       {busy && <FullscreenLoader text={busyText} />}
 
       <h1 className="text-2xl font-semibold">Admin · Upload ảnh album</h1>
 
       {/* FORM UPLOAD */}
       <form className="mt-6 space-y-5" onSubmit={(e) => e.preventDefault()}>
-        {/* ALBUM SELECT */}
+        {/* SELECT ALBUM */}
         <div>
           <label className="text-xs font-medium">Chọn album</label>
           <select
@@ -320,7 +268,7 @@ export default function AdminUploadPage() {
           </select>
         </div>
 
-        {/* COVER + MULTI IMAGE UPLOAD */}
+        {/* COVER + FILE UPLOAD */}
         <div className="grid gap-4 sm:grid-cols-2">
           {/* COVER */}
           <div>
@@ -340,13 +288,11 @@ export default function AdminUploadPage() {
             )}
           </div>
 
-          {/* ALBUM IMAGES + PREVIEW */}
+          {/* ALBUM IMAGES */}
           <div>
             <label className="text-xs font-medium">Ảnh album</label>
 
-            {/* RELATIVE WRAPPER FOR PERFECT LOADING CENTER */}
             <div className="relative mt-1">
-              {/* input */}
               <input
                 type="file"
                 accept="image/*"
@@ -356,7 +302,6 @@ export default function AdminUploadPage() {
                 className="w-full p-2 border rounded"
               />
 
-              {/* preview grid */}
               {!!filePreviews.length && (
                 <div className="grid grid-cols-2 gap-3 mt-3 sm:grid-cols-3 md:grid-cols-4">
                   {filePreviews.map((p, i) => (
@@ -386,7 +331,6 @@ export default function AdminUploadPage() {
                 </div>
               )}
 
-              {/* PERFECT CENTERED PREVIEW LOADING */}
               {loadingPreview && (
                 <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center rounded z-20">
                   <Loader2 className="animate-spin w-8 h-8 text-neutral-600" />
@@ -417,14 +361,12 @@ export default function AdminUploadPage() {
         <h2 className="text-lg font-semibold">Ảnh trong album</h2>
 
         <div className="relative mt-3">
-          {/* grid ảnh thật */}
           <AdminAlbumImages
             images={images}
             onDelete={handleDeleteOne}
             deletingId={deletingId}
           />
 
-          {/* loading overlay */}
           {loadingImages && (
             <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-20">
               <Loader2 className="animate-spin w-8 h-8 text-neutral-600" />
