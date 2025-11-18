@@ -60,7 +60,7 @@ export default function Home() {
             href="/rsvp"
             className="inline-block bg-black text-white px-8 py-3 rounded-full text-lg font-medium tracking-wide shadow-md hover:-translate-y-0.5 hover:shadow-lg hover:bg-neutral-800 transition-all duration-200"
           >
-            Đăng ký tham dự 💌
+            Xác nhận tham dự 💌
           </Link>
           <p className="mt-3 text-xs text-neutral-400">
             Vui lòng xác nhận giúp tụi mình trước ngày 30/11 nhé 💐
