@@ -25,27 +25,26 @@ export default function Home() {
         ? localStorage.getItem("wedding-intro-seen")
         : null;
 
-    if (hasSeenIntro !== "true") {
-      setTimeout(() => {
-        setShowIntro(true);
-      }, 100);
-    }
-    //     setTimeout(() => {
-    //   setShowIntro(true);
-    // }, 100);
+    // if (hasSeenIntro !== "true") {
+    //   setTimeout(() => {
+    //     setShowIntro(true);
+    //   }, 100);
+    // }
+    setTimeout(() => {
+      setShowIntro(true);
+    }, 100);
   }, []);
 
-  const handleIntroComplete = () => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("wedding-intro-seen", "true");
-    }
-    setShowIntro(false);
-  };
-  // Sau khi xong roi thi moi open len
   // const handleIntroComplete = () => {
-
+  //   if (typeof window !== "undefined") {
+  //     localStorage.setItem("wedding-intro-seen", "true");
+  //   }
   //   setShowIntro(false);
   // };
+  // Sau khi xong roi thi moi open len
+  const handleIntroComplete = () => {
+    setShowIntro(false);
+  };
   return (
     <>
       {showIntro && <WeddingIntro onComplete={handleIntroComplete} />}

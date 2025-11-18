@@ -28,7 +28,7 @@ export default function RSVPPage() {
             We’re getting married
           </p>
           <h1 className="mt-2 text-4xl md:text-5xl font-semibold">
-            Đăng ký tham dự
+            Xác nhận tham dự
           </h1>
           <p className="mt-3 text-neutral-600 max-w-2xl">
             Rất mong được đón bạn trong ngày vui của tụi mình. Vui lòng điền

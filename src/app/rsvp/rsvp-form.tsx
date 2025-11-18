@@ -341,7 +341,7 @@ export default function RSVPForm() {
                     Đang gửi...
                   </>
                 ) : (
-                  "Gửi đăng ký"
+                  "Gửi xác nhận"
                 )}
               </button>
             </div>
